@@ -1,2 +1,21 @@
-# env
+# Environment variables
+.env
 *.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# ChromaDB & Vector Store
+res/data/chroma_db/
+res/data/raw/
+res/data/markdown/
+
+# IDE
+.idea/
+.vscode/
+*.iml

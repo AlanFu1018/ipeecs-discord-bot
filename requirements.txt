@@ -1,8 +1,8 @@
 discord-py
- google-genai
- chromadb
- pypdf
- beautifulsoup4
- requests
- pyyaml
- python-dotenv
+google-genai
+chromadb
+pymupdf4llm
+beautifulsoup4
+requests
+pyyaml
+python-dotenv
