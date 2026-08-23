@@ -25,7 +25,7 @@
 - **多輪對話改寫 (Query Condensing)**：能理解上下文代名詞（例如接續問「那大三呢？」、「如果抵免的話呢？」），精準改寫問句後檢索。
 - **主動追問與引導**：當使用者問題較為籠統（如未指明學年度或專長領域）時，機器人會主動追問細節以提供最精確答案。
 - **嚴謹的 Fallback 機制**：遇查無資料、超出範圍或系統異常時，嚴禁模型幻覺，並統一附上系辦公室聯絡方式。
-- **模組化 Adapter 設計**：支援隨時抽換 LLM（Gemini/OpenAI/本地模型）與 Embedding 模組。
+- **模組化 Adapter 設計**：支援隨時抽換 LLM（Gemini / OpenAI / 本地模型）與 Embedding 模組。
 
 ---
 
@@ -43,7 +43,7 @@
    - **重要**：在 **Privileged Gateway Intents** 區塊中，開啟 **`MESSAGE CONTENT INTENT`**。
    - 在 **OAuth2 -> URL Generator** 中勾選 `bot` 及相應權限（如 Send Messages、Read Message History），生成邀請連結將機器人加入伺服器。
 2. **Google Gemini API Key**：
-   - 前往 [Google AI Studio](https://aistudio.google.com/) 申請免費 API Key。
+   - 前往 [Google AI Studio](https://aistudio.google.com/) 申請 API Key。
 
 ---
 
@@ -84,20 +84,26 @@ bot:
 
 llm:
   provider: "gemini"             # gemini / openai / local
-  model: "gemini-2.0-flash"      # LLM 模型名稱
+  model: "gemini-3.1-flash-lite" # LLM 模型名稱
   temperature: 0.2
   max_output_tokens: 1500
 
 embedding:
   provider: "gemini"             # gemini / local
-  model: "text-embedding-004"    # Embedding 模型
-  dimension: 768
+  model: "gemini-embedding-001"  # Embedding 模型
+  dimension: 3072
 
 rag:
-  top_k: 3                       # 檢索前 K 個相關片段
-  chunk_size: 600                # 文件分塊字元數
-  chunk_overlap: 100             # 分塊重疊字元數
+  top_k: 5                       # 檢索前 K 個相關片段
+  chunk_size: 1500               # 文件分塊字元數（支援完整表格解析）
+  chunk_overlap: 200             # 分塊重疊字元數
   collection_name: "ipeecs_knowledge_base"
+
+paths:
+  urls_file: "config/urls.txt"
+  raw_dir: "res/data/raw"
+  markdown_dir: "res/data/markdown"
+  chroma_db_dir: "res/data/chroma_db"
 
 department_info:
   name: "資訊電機學院學士班辦公室"
@@ -145,8 +151,8 @@ python main.py
 終端機輸出範例：
 ```text
 [INFO] Initializing IPEECS Discord Bot services...
-[INFO] Initialized VectorStore at .../res/data/chroma_db (Collection: ipeecs_knowledge_base, Docs: 56)
-[INFO] Vector store loaded with 56 document chunks.
+[INFO] Initialized VectorStore at .../res/data/chroma_db (Collection: ipeecs_knowledge_base, Docs: 44)
+[INFO] Vector store loaded with 44 document chunks.
 [INFO] Logged in as IPEECS Advisor Bot#1234 (ID: 1234567890)
 [INFO] Bot is ready and listening for Direct Messages (DM)!
 ```
@@ -192,17 +198,18 @@ python main.py
 > **機器人**：  
 > 我目前在規章資料庫中查無足夠的相關資訊（問題超出規章範圍或查無記載）。  
 >   
-> 若有我無法回答的問題，或是需要進一步協助，也歡迎透過以下方式聯繫系辦公室：  
+> 若我有無法回答的問題，或是需要進一步協助，也歡迎透過以下方式聯繫系辦公室：  
 > 🏢 **資訊電機學院學士班辦公室**  
 > 📞 **電話**：03-4227151 分機 35007  
 > 📧 **信箱**：ncu35007@ncu.edu.tw  
-> 📍 **位置**：工程五館E6 B棟106室 (E6-B106)
+> 📍 **位置**：工程五館E6 B棟106室 (E6-B106)  
+> ⏰ **服務時間**：週一至週五 08:30 - 17:00
 
 ---
 
 ### 特殊指令
 
-- **`/reset`** 或 輸入 **`重新開始` / `重設`**：
+- **`/reset`** 或 輸入 **`重新開始` / `重設` / `reset`**：
   清除當前使用者在機器人中的短期對話記憶，重新開啟新話題。
 
 ---
@@ -212,7 +219,7 @@ python main.py
 ### Q1: 機器人在 Discord 上顯示離線或沒有回應？
 1. **檢查 Token**：確認 `.env` 中的 `DISCORD_BOT_TOKEN` 是否正確填寫且無多餘引號或空白。
 2. **檢查 Privileged Intents**：確認 Discord Developer Portal 中的 **Message Content Intent** 是否已開啟。
-3. **確認是否在私訊中提問**：本機器人預設僅處理 **DM（一對一私訊）**，不處理群組伺服器公開頻道的閒聊。
+3. **確認是否在私訊中提問**：本機器人預設僅處理 **DM（一對一私訊）**，不在群組伺服器公開頻道聊天以保護隱私。
 
 ### Q2: 執行 `sync_data.py` 時報錯 `GEMINI_API_KEY is not configured`？
 - 請在 `.env` 中設定 `GEMINI_API_KEY="你的Key"`。
@@ -237,7 +244,7 @@ python main.py
 ```bash
 python sync_data.py --skip-crawl
 ```
-即可立即將自訂 QA 整合至機器人的大腦中。
+即可立即將自訂 QA 整合至機器人的知識庫中。
 
 ---
 *手冊維護人員：國立中央大學資訊電機學院學士班 開發團隊*

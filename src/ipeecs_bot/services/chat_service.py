@@ -32,13 +32,15 @@ class ChatService:
         phone = self.dept_info.get("phone", "03-4227151 分機 35007")
         email = self.dept_info.get("email", "ncu35007@ncu.edu.tw")
         location = self.dept_info.get("location", "工程五館E6 B棟106室 (E6-B106)")
+        office_hours = self.dept_info.get("office_hours", "週一至週五 08:30 - 17:00")
 
         contact_text = (
-            "若有我無法回答的問題，或是需要進一步協助，也歡迎透過以下方式聯繫系辦公室：\n\n"
+            "若我有無法回答的問題，或是需要進一步協助，也歡迎透過以下方式聯繫系辦公室：\n\n"
             f"🏢 **{name}**\n"
             f"📞 **電話**：{phone}\n"
             f"📧 **信箱**：{email}\n"
-            f"📍 **位置**：{location}"
+            f"📍 **位置**：{location}\n"
+            f"⏰ **服務時間**：{office_hours}"
         )
 
         if is_error:
@@ -84,12 +86,13 @@ class ChatService:
             source_name = doc.get("metadata", {}).get("source", "未知來源")
             title = doc.get("metadata", {}).get("title", "")
             content = doc.get("content", "")
-            sources_context += f"--- [參考規章 {i}] (來源: {source_name} | {title}) ---\\n{content}\n\n"
+            sources_context += f"--- [參考規章 {i}] (來源: {source_name} | {title}) ---\n{content}\n\n"
 
         dept_name = self.dept_info.get("name", "資訊電機學院學士班辦公室")
         phone = self.dept_info.get("phone", "03-4227151 分機 35007")
         email = self.dept_info.get("email", "ncu35007@ncu.edu.tw")
         location = self.dept_info.get("location", "工程五館E6 B棟106室 (E6-B106)")
+        office_hours = self.dept_info.get("office_hours", "週一至週五 08:30 - 17:00")
 
         return (
             f"你是國立中央大學資訊電機學院學士班（資電學士班）的專屬智能客服與修課規章顧問。\n"
@@ -99,14 +102,15 @@ class ChatService:
             "2. 【主動追問與釐清細節】：若使用者的問題較為籠統或缺乏關鍵條件（例如：尚未指明**入學/適用學年度**、**專長領域**（電機工程/資訊工程/通訊工程/網路工程）、**年級**或**身分**（如轉學生/雙主修）等），導致不同情況適用不同規章時：\n"
             "   - 請先就目前已知資訊提供概括或主流說明。\n"
             "   - **主動親切地追問使用者具體的詳細條件**（例如：「請問您是哪一學年度入學？或是選擇哪個專長領域（資工/電機/通訊/網路）呢？告訴我後我能為您提供更精確的規定喔！」），以利後續給予最精確的解答。\n"
-            "3. 【正常回答格式（禁止主動附帶系辦資訊）】：若參考資料中有足夠資訊可回答問題，請精準回答，並在回覆最末尾附註參考來源（例如：`📌 參考來源：[來源檔案名稱或網址]`）。"
+            "3. 【正常回答格式（禁止主動附帶系辦資訊）】：若參考資料中有足夠資訊可回答問題，請精準回答，並在回覆最末尾附註參考來源（例如：`📌 參考來源：[來源檔案名稱或網址]`）。\n"
             "**請注意：在能夠正常回答或追問釐清的情況下，絕對不要附帶系辦公室聯絡資訊（電話/信箱/位置等），保持回覆精簡專業**。\n"
             "4. 【查無資料/超出範圍處理（僅此情況附帶系辦資訊）】：若參考資料中**完全沒有足夠資訊**回答，或是問題超出資電學士班規章範圍，請明確表示查無相關記載，**僅在此種無法回答的情況下**附上以下系辦公室聯絡方式：\n"
-            "   若有我無法回答的問題，或是需要進一步協助，也歡迎透過以下方式聯繫系辦公室：\n"
+            "   若我有無法回答的問題，或是需要進一步協助，也歡迎透過以下方式聯繫系辦公室：\n"
             f"   🏢 {dept_name}\n"
             f"   📞 電話：{phone}\n"
             f"   📧 信箱：{email}\n"
-            f"   📍 位置：{location}\n\n"
+            f"   📍 位置：{location}\n"
+            f"   ⏰ 服務時間：{office_hours}\n\n"
             "【參考規章資料】\n"
             f"{sources_context}"
         )
