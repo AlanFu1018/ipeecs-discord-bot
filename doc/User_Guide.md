@@ -1,6 +1,6 @@
 # 國立中央大學資電學士班智能客服機器人 — 使用手冊 (User Guide)
 
-歡迎使用 **國立中央大學資訊電機學院學士班（IPEECS）智能客服機器人**。本手冊旨在提供使用者、助教及系統管理員完整的操作與維運指引，涵蓋環境部署、資料庫同步、Discord 互動操作及常見問題排解。
+歡迎使用 **國立中央大學資訊電機學院學士班（IPEECS）智能客服機器人**。本手冊旨在提供使用者、助教及系統管理員長遠的操作與維運指引，涵蓋環境部署、資料庫同步（爬蟲與表格轉換）、Discord 互動操作以及常見問題排解。
 
 ---
 
@@ -20,11 +20,13 @@
 
 本機器人專為中央大學資電學士班設計，基於 **檢索增強生成（RAG）** 技術與 **Google Gemini LLM**，提供以下核心價值：
 
-- **一對一私訊諮詢 (DM)**：所有對話皆在私訊中進行，保護學生隱私且不干擾公開伺服器。
-- **高精確度規章檢索**：自動爬取並索引 109～114 學年度各專長課規 PDF 與系網資訊，所有回答皆有依據。
-- **多輪對話改寫 (Query Condensing)**：能理解上下文代名詞（例如接續問「那大三呢？」、「如果抵免的話呢？」），精準改寫問句後檢索。
-- **主動追問與引導**：當使用者問題較為籠統（如未指明學年度或專長領域）時，機器人會主動追問細節以提供最精確答案。
-- **嚴謹的 Fallback 機制**：遇查無資料、超出範圍或系統異常時，嚴禁模型幻覺，並統一附上系辦公室聯絡方式。
+- **一對一私訊諮詢 (DM)**：所有對話皆在私訊中進行，保護學生修課隱私且不干擾公開伺服器。若在伺服器公頻中 `@機器人`，機器人會主動引導使用者至私訊進行提問。
+- **高精確度規章檢索**：自動爬取並索引 109～114 學年度各專長課規（資工、電機、通訊、網工）、中央大學學則、創意與創業學分學程及系網資訊，回答均標註來源。
+- **Gemini 多模態表格轉 Markdown 技術**：針對大量複雜表格的修業規章 PDF，透過 Gemini 多模態解析轉換為乾淨 Markdown 表格再分塊索引，大幅提升表格檢索精確度。
+- **多輪對話改寫 (Query Condensing)**：能理解上下文代名詞（例如接續問「那大三呢？」、「如果是電機專長呢？」、「抵免門檻是多少？」），自動改寫為獨立語意問句後進行精準向量檢索。
+- **主動追問與引導**：當使用者問題較為籠統（如未指明入學學年度或專長領域）時，機器人會先給予概述並親切追問細節以提供最精確答案。
+- **嚴謹的 Fallback 機制**：遇查無資料、超出範圍或系統異常時，嚴禁模型幻覺，並統一附上資電學士班系辦公室的聯絡資訊。
+- **訊息長度自動分段**：針對超過 Discord 2000 字元上限的長回覆，自動分段循序發送，確保資訊完整不中斷。
 - **模組化 Adapter 設計**：支援隨時抽換 LLM（Gemini / OpenAI / 本地模型）與 Embedding 模組。
 
 ---
@@ -92,11 +94,13 @@ embedding:
   provider: "gemini"             # gemini / local
   model: "gemini-embedding-001"  # Embedding 模型
   dimension: 3072
+  batch_size: 10                 # 每批次向量化文件數量 (防 429 頻率限制)
+  delay_seconds: 5.0             # 批次之間的冷卻間隔時間 (秒)
 
 rag:
-  top_k: 5                       # 檢索前 K 個相關片段
-  chunk_size: 1500               # 文件分塊字元數（支援完整表格解析）
-  chunk_overlap: 200             # 分塊重疊字元數
+  top_k: 9                       # 檢索前 K 個相關片段
+  chunk_size: 600                # 文件分塊字元數
+  chunk_overlap: 100             # 分塊重疊字元數
   collection_name: "ipeecs_knowledge_base"
 
 paths:
@@ -117,10 +121,16 @@ department_info:
 
 ## 4. 知識庫資料同步 (sync_data.py)
 
-當系所規章有更新、或初次部署專案時，需執行 `sync_data.py` 建立／更新向量資料庫：
+當系所規章有更新、或初次部署專案時，需執行 `sync_data.py` 建立／更新向量資料庫。
+
+### 三分區爬取與轉換架構
+資料爬蟲將 `config/urls.txt` 中的目標分為三個分區處理：
+1. **網站分區（Zone 1: 網頁）**：爬取系所網頁內容並轉為 Markdown 儲存至 `res/data/markdown/`。
+2. **文字為主分區（Zone 2: 文字 PDF）**：下載中央大學學則等長文規章至 `res/data/raw/text_pdfs/`，以 `pymupdf4llm` 高速解析。
+3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～114 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs/`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。
 
 ```bash
-# 完整同步：爬取系網頁面、下載最新規章 PDF 並寫入向量庫
+# 完整同步：爬取系網頁面、下載最新規章 PDF、表格轉換並寫入向量庫
 python sync_data.py
 ```
 
@@ -128,14 +138,18 @@ python sync_data.py
 
 | 參數 | 說明 | 適用情境 |
 | :--- | :--- | :--- |
-| *(無參數)* | 執行完整爬蟲 + 解析分塊 + 清除舊庫並重新建立索引。 | 定期規章大改版或初次建庫。 |
-| `--skip-crawl` | **略過網路爬蟲**，僅重新解析本機 `res/data/raw/` 與 `res/data/markdown/` 檔案並建庫。 | 已手動加入新 PDF 或修訂 Markdown 時。 |
+| *(無參數)* | 執行完整爬蟲 + Gemini 表格轉 Markdown + 解析分塊 + 清除舊庫並重新建立索引。 | 定期規章大改版或初次建庫。 |
+| `--skip-crawl` | **略過網路爬蟲與表格轉換**，僅重新解析本機 `res/data/` 現有文件並快速重建向量索引。 | 已手動加入新 PDF 或修訂 Markdown 時。 |
+| `--skip-llm-convert` | **執行爬蟲與下載，但略過 Gemini 表格轉 Markdown**，直接沿用既有 Markdown 快取。 | 更新網頁或下載新 PDF，但不想重複消耗 LLM Token 重新轉表時。 |
 | `--no-reset` | **不清空現有資料庫**，直接將新分塊追加（Upsert）進 ChromaDB。 | 單純擴充資料，保留原有向量時。 |
 
 範例：
 ```bash
-# 僅重新解析本機文件並建立向量庫
+# 僅重新解析本機現有文件並建立向量庫（極速）
 python sync_data.py --skip-crawl
+
+# 重新爬取網頁與下載 PDF，但略過 Gemini 轉表（節省 Token）
+python sync_data.py --skip-llm-convert
 ```
 
 ---
@@ -151,13 +165,15 @@ python main.py
 終端機輸出範例：
 ```text
 [INFO] Initializing IPEECS Discord Bot services...
-[INFO] Initialized VectorStore at .../res/data/chroma_db (Collection: ipeecs_knowledge_base, Docs: 44)
-[INFO] Vector store loaded with 44 document chunks.
-[INFO] Logged in as IPEECS Advisor Bot#1234 (ID: 1234567890)
-[INFO] Bot is ready and listening for Direct Messages (DM)!
+[INFO] Initialized VectorStore at .../res/data/chroma_db (Collection: ipeecs_knowledge_base, Docs: 132)
+[INFO] Vector store loaded with 132 document chunks.
+[INFO] Bot setup hook initialized.
+[INFO] Synced 0 application commands.
+[INFO] Bot connected successfully as: IPEECS Advisor Bot#1234 (ID: 1234567890)
+[INFO] Bot is ready to accept 1-on-1 DM inquiries.
 ```
 
-> **提示**：按下 `Ctrl + C` 可觸發 Graceful Shutdown，安全關閉連線與保存狀態。
+> **提示**：按下 `Ctrl + C` 可觸發 Graceful Shutdown，安全關閉連線與保存狀態。機器人上線時會自動將狀態設為「正在收聽 私訊諮詢系所規章與選課」。
 
 ---
 
@@ -165,8 +181,9 @@ python main.py
 
 ### 如何開始使用
 1. 在 Discord 伺服器成員名單中找到機器人。
-2. 點擊機器人頭像，選擇 **「發送訊息」** 進入 1 對 1 私訊視窗。
-3. 直接發送任何想詢問的修課或系所問題。
+2. 點擊機器人頭像，選擇 **「發送訊息」** 進入 1 對 1 私訊（DM）視窗。
+3. 直接發送任何想詢問的修課、專長學分或系所規章問題。
+4. 若在公開頻道中 `@機器人`，機器人會主動提示並引導您至私訊視窗提問。
 
 ---
 
@@ -219,28 +236,38 @@ python main.py
 ### Q1: 機器人在 Discord 上顯示離線或沒有回應？
 1. **檢查 Token**：確認 `.env` 中的 `DISCORD_BOT_TOKEN` 是否正確填寫且無多餘引號或空白。
 2. **檢查 Privileged Intents**：確認 Discord Developer Portal 中的 **Message Content Intent** 是否已開啟。
-3. **確認是否在私訊中提問**：本機器人預設僅處理 **DM（一對一私訊）**，不在群組伺服器公開頻道聊天以保護隱私。
+3. **確認是否在私訊中提問**：本機器人預設在 **DM（一對一私訊）** 中回答；在群組伺服器公開頻道提及時，機器人會指引至私訊對話。
 
 ### Q2: 執行 `sync_data.py` 時報錯 `GEMINI_API_KEY is not configured`？
-- 請在 `.env` 中設定 `GEMINI_API_KEY="你的Key"`。
+- 請在 `.env` 中設定 `GEMINI_API_KEY="你的Key"`。表格轉 Markdown 與向量 Embedding 均依賴此 API 金鑰。
 
 ### Q3: 機器人回答內容與最新法規不符？
-- 可能是學校系網發布了新版本 PDF。
+- 可能是學校系網發布了新版本規章 PDF。
 - 請確認 `config/urls.txt` 連結是否最新，並重新執行 `python sync_data.py` 更新本地向量資料庫。
+
+### Q4: 收到長篇回覆時訊息是否會被截斷？
+- 不會。系統具備訊息自動拆分機制，超過 1900 字元的回覆會自動拆解為多則連續訊息發送。
 
 ---
 
 ## 8. 系統維護與客製化
 
 ### 調整目標爬蟲網址 (`config/urls.txt`)
-在 `config/urls.txt` 中加入新的系網頁面或教務規章網址，以 `//` 作為註解：
+在 `config/urls.txt` 中可依三大分區加入新的系網頁面或教務規章網址，以 `//` 作為註解：
 ```text
-// 資電學士班重要規章
-最新法規頁面: https://www.ipeecs.ncu.edu.tw/...
+// 網站
+系所簡介: https://www.ipeecs.ncu.edu.tw/introduction.html
+最新消息: https://www.ipeecs.ncu.edu.tw/news.html
+
+// 文字為主的 pdf
+國立中央大學學則: https://pdc.adm.ncu.edu.tw/...
+
+// 大量表格為主的 pdf
+歷年教務章則目錄: https://pdc.adm.ncu.edu.tw/rule/
 ```
 
 ### 增加手動 Markdown 文件
-若有尚未製作成網頁或 PDF 的常見問答（FAQ），可直接新增 Markdown 檔案至 `res/data/markdown/`（例如 `常見問題集.md`），接著執行：
+若有尚未製作成網頁或 PDF 的常見問答（FAQ），可直接新增 Markdown 檔案至 `res/data/markdown/`（例如 `自訂常見問題集.md`），接著執行：
 ```bash
 python sync_data.py --skip-crawl
 ```

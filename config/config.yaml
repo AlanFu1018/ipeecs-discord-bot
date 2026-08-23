@@ -13,6 +13,8 @@ embedding:
   provider: "gemini" # gemini, local
   model: "gemini-embedding-001"
   dimension: 3072
+  batch_size: 10
+  delay_seconds: 5.0
 
 rag:
   top_k: 9

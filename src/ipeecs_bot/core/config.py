@@ -37,19 +37,21 @@ class Settings:
         # LLM configs
         llm_cfg = self._raw_config.get("llm", {})
         self.llm_provider = llm_cfg.get("provider", "gemini")
-        self.llm_model = llm_cfg.get("model", "gemini-2.0-flash")
+        self.llm_model = llm_cfg.get("model", "gemini-3.1-flash-lite")
         self.llm_temperature = float(llm_cfg.get("temperature", 0.2))
         self.llm_max_output_tokens = int(llm_cfg.get("max_output_tokens", 1500))
 
         # Embedding configs
         embed_cfg = self._raw_config.get("embedding", {})
         self.embed_provider = embed_cfg.get("provider", "gemini")
-        self.embed_model = embed_cfg.get("model", "text-embedding-004")
-        self.embed_dimension = int(embed_cfg.get("dimension", 768))
+        self.embed_model = embed_cfg.get("model", "gemini-embedding-001")
+        self.embed_dimension = int(embed_cfg.get("dimension", 3072))
+        self.embed_batch_size = int(embed_cfg.get("batch_size", 10))
+        self.embed_delay_seconds = float(embed_cfg.get("delay_seconds", 5.0))
 
         # RAG configs
         rag_cfg = self._raw_config.get("rag", {})
-        self.top_k = int(rag_cfg.get("top_k", 3))
+        self.top_k = int(rag_cfg.get("top_k", 9))
         self.chunk_size = int(rag_cfg.get("chunk_size", 600))
         self.chunk_overlap = int(rag_cfg.get("chunk_overlap", 100))
         self.collection_name = rag_cfg.get("collection_name", "ipeecs_knowledge_base")

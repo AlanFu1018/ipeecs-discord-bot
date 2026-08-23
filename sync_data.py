@@ -20,7 +20,11 @@ from src.ipeecs_bot.rag.vector_store import VectorStore
 from src.ipeecs_bot.services.crawler import DataCrawler
 
 
-def run_sync(skip_crawl: bool = False, reset_db: bool = True):
+def run_sync(
+    skip_crawl: bool = False,
+    skip_llm_convert: bool = False,
+    reset_db: bool = True,
+):
     """Executes the data synchronization workflow."""
     settings = get_settings()
     logger.info("=== Starting IPEECS Bot Knowledge Base Sync ===")
@@ -34,7 +38,10 @@ def run_sync(skip_crawl: bool = False, reset_db: bool = True):
             gemini_api_key=settings.gemini_api_key,
             gemini_model=settings.llm_model,
         )
-        crawler.crawl_all(settings.urls_file)
+        crawler.crawl_all(
+            urls_file=settings.urls_file,
+            skip_llm_convert=skip_llm_convert,
+        )
     else:
         logger.info("[Step 1/3] Skipping crawl as requested.")
 
@@ -80,10 +87,19 @@ if __name__ == "__main__":
         help="Skip web crawling and only re-index existing raw/markdown files.",
     )
     parser.add_argument(
+        "--skip-llm-convert",
+        action="store_true",
+        help="Execute web crawl and PDF download but skip Gemini table-to-markdown conversion.",
+    )
+    parser.add_argument(
         "--no-reset",
         action="store_true",
         help="Do not clear the existing ChromaDB collection before adding chunks.",
     )
     args = parser.parse_args()
 
-    run_sync(skip_crawl=args.skip_crawl, reset_db=not args.no_reset)
+    run_sync(
+        skip_crawl=args.skip_crawl,
+        skip_llm_convert=args.skip_llm_convert,
+        reset_db=not args.no_reset,
+    )
