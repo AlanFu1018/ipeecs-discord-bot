@@ -26,30 +26,30 @@ class VectorStore:
             path=str(self.persist_dir),
             settings=ChromaSettings(anonymized_telemetry=False),
         )
-        self.collection = self.client.get_or_create_collection(
+        col = self._get_collection()
+        logger.info(
+            f"Initialized VectorStore at {self.persist_dir} (Collection: {self.collection_name}, Docs: {col.count()})"
+        )
+
+    def _get_collection(self):
+        """Retrieves or creates the current Chroma collection dynamically."""
+        return self.client.get_or_create_collection(
             name=self.collection_name,
             metadata={"hnsw:space": "cosine"},
-        )
-        logger.info(
-            f"Initialized VectorStore at {self.persist_dir} (Collection: {self.collection_name}, Docs: {self.collection.count()})"
         )
 
     def count(self) -> int:
         """Returns the total number of document chunks stored."""
-        return self.collection.count()
+        return self._get_collection().count()
 
     def reset_collection(self) -> None:
-        """Deletes and recreates the current collection."""
+        """Deletes all existing items in current collection safely without breaking UUID handles."""
         try:
-            try:
-                self.client.delete_collection(name=self.collection_name)
-            except Exception:
-                pass
-            self.collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": "cosine"},
-            )
-            logger.info(f"Reset collection: {self.collection_name}")
+            col = self._get_collection()
+            existing = col.get()
+            if existing and existing.get("ids") and len(existing["ids"]) > 0:
+                col.delete(ids=existing["ids"])
+            logger.info(f"Reset collection: {self.collection_name} (cleared existing docs)")
         except Exception as e:
             logger.error(f"Error resetting collection: {e}")
 
@@ -72,7 +72,8 @@ class VectorStore:
             metadatas = [chunk.metadata for chunk in batch]
 
             embeddings = self.embedding_provider.embed_documents_sync(texts)
-            self.collection.add(
+            col = self._get_collection()
+            col.upsert(
                 ids=ids,
                 documents=texts,
                 embeddings=embeddings,
@@ -103,7 +104,8 @@ class VectorStore:
             metadatas = [chunk.metadata for chunk in batch]
 
             embeddings = await self.embedding_provider.embed_documents(texts)
-            self.collection.add(
+            col = self._get_collection()
+            col.upsert(
                 ids=ids,
                 documents=texts,
                 embeddings=embeddings,
@@ -121,7 +123,8 @@ class VectorStore:
             logger.warning(f"Could not generate embedding for query: {query}")
             return []
 
-        results = self.collection.query(
+        col = self._get_collection()
+        results = col.query(
             query_embeddings=[query_vector],
             n_results=top_k,
         )
@@ -150,7 +153,8 @@ class VectorStore:
             logger.warning(f"Could not generate embedding for query: {query}")
             return []
 
-        results = self.collection.query(
+        col = self._get_collection()
+        results = col.query(
             query_embeddings=[query_vector],
             n_results=top_k,
         )

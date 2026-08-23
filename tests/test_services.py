@@ -4,6 +4,10 @@ import sys
 import time
 from pathlib import Path
 
+# Ensure UTF-8 output encoding on Windows console
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -39,7 +43,7 @@ def test_session_sliding_window_and_timeout():
 
 
 async def test_llm_query_rewriting_and_fallback():
-    """Tests query rewriting and fallback response for unmatched questions."""
+    """Tests query rewriting, fallback response, and cross-page table retrieval."""
     settings = get_settings()
     llm = get_llm_provider(settings)
     embedding = get_embedding_provider(settings)
@@ -57,6 +61,15 @@ async def test_llm_query_rewriting_and_fallback():
     rewritten = await chat_service.rewrite_query(session, "那大三呢？")
     print("Rewritten query result:", rewritten)
     assert len(rewritten) > 0
+
+    # Test entrepreneurship course query (table retrieval test)
+    answer = await chat_service.answer_message(
+        "test_user_003",
+        "請問「創意與創業」學分學程中，創業專題類別包含哪些課程？至少需要修幾學分？"
+    )
+    print("Entrepreneurship test response:\n", answer)
+    assert "4" in answer or "四" in answer
+    assert "專題" in answer
 
 
 if __name__ == "__main__":
