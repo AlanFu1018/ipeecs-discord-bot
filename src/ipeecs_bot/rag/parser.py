@@ -16,7 +16,7 @@ class DocumentChunk:
 
 
 class DocumentParser:
-    """Parses raw PDF and Markdown documents into chunked documents."""
+    """Parses Markdown and text PDF documents into chunked documents."""
 
     def __init__(self, chunk_size: int = 600, chunk_overlap: int = 100):
         self.chunk_size = chunk_size
@@ -97,7 +97,7 @@ class DocumentParser:
             return []
 
     def parse_pdf_file(self, file_path: Path) -> List[DocumentChunk]:
-        """Parses a PDF file using pymupdf4llm (extracting tables to Markdown) and returns chunks."""
+        """Parses a PDF file using pymupdf4llm and returns chunks."""
         try:
             md_content = pymupdf4llm.to_markdown(str(file_path))
             title = file_path.stem
@@ -115,17 +115,22 @@ class DocumentParser:
             return []
 
     def parse_directory(self, raw_dir: Path, markdown_dir: Path) -> List[DocumentChunk]:
-        """Parses all markdown and PDF files in given directories."""
+        """Parses all Markdown files and text-dominant PDF files."""
         all_chunks: List[DocumentChunk] = []
 
-        # Parse markdown files
+        # 1. Parse all Markdown files (scraped web pages + Gemini-converted table PDFs)
         if markdown_dir.exists():
-            for md_file in markdown_dir.glob("*.md"):
+            for md_file in sorted(markdown_dir.glob("*.md")):
                 all_chunks.extend(self.parse_markdown_file(md_file))
 
-        # Parse PDF files
-        if raw_dir.exists():
-            for pdf_file in raw_dir.glob("*.pdf"):
+        # 2. Parse text-dominant PDF files (e.g. 國立中央大學學則)
+        text_pdf_dir = raw_dir / "text_pdfs"
+        if text_pdf_dir.exists() and list(text_pdf_dir.glob("*.pdf")):
+            for pdf_file in sorted(text_pdf_dir.glob("*.pdf")):
+                all_chunks.extend(self.parse_pdf_file(pdf_file))
+        elif raw_dir.exists():
+            # Fallback: only if text_pdfs subfolder not used
+            for pdf_file in sorted(raw_dir.glob("*.pdf")):
                 all_chunks.extend(self.parse_pdf_file(pdf_file))
 
         logger.info(f"Total chunks extracted across all sources: {len(all_chunks)}")

@@ -1,7 +1,7 @@
 """Data Synchronization and Vector Store Ingestion Tool.
 
-Executes web crawling, PDF downloads, document parsing, text chunking,
-embedding generation, and local ChromaDB persistence.
+Executes web crawling, PDF downloads, Gemini multimodal table-to-markdown conversion,
+document parsing, text chunking, embedding generation, and local ChromaDB persistence.
 """
 import argparse
 import sys
@@ -25,12 +25,14 @@ def run_sync(skip_crawl: bool = False, reset_db: bool = True):
     settings = get_settings()
     logger.info("=== Starting IPEECS Bot Knowledge Base Sync ===")
 
-    # Step 1: Web Crawling and PDF Downloading
+    # Step 1: Web Crawling, PDF Downloading & Table Conversion via Gemini
     if not skip_crawl:
-        logger.info("[Step 1/3] Crawling Department URLs & downloading PDFs...")
+        logger.info("[Step 1/3] Crawling Department URLs, downloading PDFs & converting tables with Gemini...")
         crawler = DataCrawler(
             raw_dir=settings.raw_dir,
             markdown_dir=settings.markdown_dir,
+            gemini_api_key=settings.gemini_api_key,
+            gemini_model=settings.llm_model,
         )
         crawler.crawl_all(settings.urls_file)
     else:

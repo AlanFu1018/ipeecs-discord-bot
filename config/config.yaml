@@ -15,9 +15,9 @@ embedding:
   dimension: 3072
 
 rag:
-  top_k: 5
-  chunk_size: 1500
-  chunk_overlap: 200
+  top_k: 9
+  chunk_size: 600
+  chunk_overlap: 100
   collection_name: "ipeecs_knowledge_base"
 
 paths:

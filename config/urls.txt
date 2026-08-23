@@ -1,3 +1,5 @@
+//網站
+
 //資電學士班官網
 資電學士班官網首頁: https://www.ipeecs.ncu.edu.tw/
 學士班簡介: https://www.ipeecs.ncu.edu.tw/basic-info/intro/intro/
@@ -7,11 +9,17 @@
 學士班辦公室同仁: https://www.ipeecs.ncu.edu.tw/basic-info/intro/members/
 班務委員名單: https://www.ipeecs.ncu.edu.tw/basic-info/intro/committee/
 
+//pdf 檔案(文字為主)
 
-//pdf 檔案更新區
+// title="國立中央大學學則（PDF，另開新視窗）"
+國立中央大學學則: https://pdc.adm.ncu.edu.tw/p/412-1019-1993.php?Lang=zh-tw
+
+
+//pdf 檔案(大量表格)
 
 // 11X教務章則彙編 >> 國立中央大學各學士班應修科目及畢業條件目次表 >> 資訊電機學院學士班
 必修及專業科目畢業條件: https://pdc.adm.ncu.edu.tw/p/412-1019-2070.php?Lang=zh-tw
 
 // 「創意與創業」學分學程 >> 選修辦法
 創意創業學分學程: https://course.ncu.edu.tw/p/412-1014-2059.php?Lang=zh-tw
+

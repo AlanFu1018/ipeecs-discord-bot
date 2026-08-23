@@ -39,17 +39,15 @@ class VectorStore:
         return self.collection.count()
 
     def reset_collection(self) -> None:
-        """Deletes and recreates the current collection."""
+        """Clears all existing documents in the current collection."""
         try:
-            try:
-                self.client.delete_collection(name=self.collection_name)
-            except Exception:
-                pass
-            self.collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": "cosine"},
-            )
-            logger.info(f"Reset collection: {self.collection_name}")
+            existing = self.collection.get()
+            existing_ids = existing.get("ids", [])
+            if existing_ids:
+                self.collection.delete(ids=existing_ids)
+                logger.info(f"Reset collection by removing {len(existing_ids)} items: {self.collection_name}")
+            else:
+                logger.info(f"Collection {self.collection_name} is already empty.")
         except Exception as e:
             logger.error(f"Error resetting collection: {e}")
 
@@ -66,8 +64,8 @@ class VectorStore:
             batch = chunks[i : i + batch_size]
             texts = [chunk.content for chunk in batch]
             ids = [
-                f"{chunk.metadata.get('source', 'doc')}_{chunk.metadata.get('chunk_index', idx)}_{i + idx}"
-                for idx, chunk in enumerate(batch)
+                f"chunk_{i + idx}"
+                for idx, _ in enumerate(batch)
             ]
             metadatas = [chunk.metadata for chunk in batch]
 
@@ -97,8 +95,8 @@ class VectorStore:
             batch = chunks[i : i + batch_size]
             texts = [chunk.content for chunk in batch]
             ids = [
-                f"{chunk.metadata.get('source', 'doc')}_{chunk.metadata.get('chunk_index', idx)}_{i + idx}"
-                for idx, chunk in enumerate(batch)
+                f"chunk_{i + idx}"
+                for idx, _ in enumerate(batch)
             ]
             metadatas = [chunk.metadata for chunk in batch]
 
