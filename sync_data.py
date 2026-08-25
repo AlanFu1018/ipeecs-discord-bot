@@ -23,6 +23,7 @@ from src.ipeecs_bot.services.crawler import DataCrawler
 def run_sync(
     skip_crawl: bool = False,
     skip_llm_convert: bool = False,
+    skip_converted: bool = False,
     reset_db: bool = True,
 ):
     """Executes the data synchronization workflow."""
@@ -41,6 +42,7 @@ def run_sync(
         crawler.crawl_all(
             urls_file=settings.urls_file,
             skip_llm_convert=skip_llm_convert,
+            skip_converted=skip_converted,
         )
     else:
         logger.info("[Step 1/3] Skipping crawl as requested.")
@@ -92,6 +94,11 @@ if __name__ == "__main__":
         help="Execute web crawl and PDF download but skip Gemini table-to-markdown conversion.",
     )
     parser.add_argument(
+        "--skip-converted",
+        action="store_true",
+        help="Skip Gemini LLM conversion for table PDFs that already have a corresponding markdown file.",
+    )
+    parser.add_argument(
         "--no-reset",
         action="store_true",
         help="Do not clear the existing ChromaDB collection before adding chunks.",
@@ -101,5 +108,6 @@ if __name__ == "__main__":
     run_sync(
         skip_crawl=args.skip_crawl,
         skip_llm_convert=args.skip_llm_convert,
+        skip_converted=args.skip_converted,
         reset_db=not args.no_reset,
     )

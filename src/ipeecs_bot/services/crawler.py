@@ -373,8 +373,11 @@ class DataCrawler:
 
         return None
 
-    def convert_all_table_pdfs(self) -> List[Path]:
-        """Converts all downloaded table PDFs in table_pdf_dir into Markdown files in markdown_dir."""
+    def convert_all_table_pdfs(self, skip_converted: bool = False) -> List[Path]:
+        """Converts all downloaded table PDFs in table_pdf_dir into Markdown files in markdown_dir.
+
+        If skip_converted is True, skips converting PDFs whose corresponding markdown files already exist.
+        """
         table_pdfs = list(self.table_pdf_dir.glob("*.pdf"))
         logger.info(f"Converting {len(table_pdfs)} table PDFs to Markdown via Gemini ({self.gemini_model})...")
         converted_mds: List[Path] = []
@@ -382,13 +385,19 @@ class DataCrawler:
         for pdf_file in table_pdfs:
             md_filename = f"{pdf_file.stem}.md"
             out_md_path = self.markdown_dir / md_filename
+
+            if skip_converted and out_md_path.exists() and out_md_path.stat().st_size > 0:
+                logger.info(f"Skipping already converted table PDF: {pdf_file.name} (found {out_md_path.name})")
+                converted_mds.append(out_md_path)
+                continue
+
             res = self.convert_pdf_to_markdown_gemini(pdf_file, out_md_path)
             if res:
                 converted_mds.append(res)
             # Sleep briefly between calls to stay well within Gemini API limits
             time.sleep(2.0)
 
-        logger.info(f"Successfully converted {len(converted_mds)}/{len(table_pdfs)} table PDFs to Markdown.")
+        logger.info(f"Successfully converted/prepared {len(converted_mds)}/{len(table_pdfs)} table PDFs in Markdown.")
         return converted_mds
 
     def parse_urls_file(self, urls_file: Path) -> Dict[str, List[Tuple[str, str]]]:
@@ -441,7 +450,12 @@ class DataCrawler:
 
         return sections
 
-    def crawl_all(self, urls_file: Path, skip_llm_convert: bool = False) -> Dict[str, Any]:
+    def crawl_all(
+        self,
+        urls_file: Path,
+        skip_llm_convert: bool = False,
+        skip_converted: bool = False,
+    ) -> Dict[str, Any]:
         """Executes full 3-zone crawl based on urls.txt."""
         logger.info(f"Parsing URLs config from: {urls_file}")
         targets = self.parse_urls_file(urls_file)
@@ -492,7 +506,7 @@ class DataCrawler:
         # Convert table PDFs to Markdown via Gemini
         if not skip_llm_convert:
             if results["table_pdf_files"] or list(self.table_pdf_dir.glob("*.pdf")):
-                converted = self.convert_all_table_pdfs()
+                converted = self.convert_all_table_pdfs(skip_converted=skip_converted)
                 results["converted_table_markdowns"].extend(converted)
         else:
             logger.info("Skipping Gemini table-to-markdown conversion (--skip-llm-convert enabled).")
