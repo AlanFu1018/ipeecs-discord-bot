@@ -121,9 +121,9 @@ department_info:
 
 ### 三分區爬取與轉換架構
 資料爬蟲將 `config/urls.txt` 中的目標分為三個分區處理：
-1. **網站分區（Zone 1: 網頁）**：爬取系所網頁內容並轉為 Markdown 儲存至 `res/data/markdown/`。可以直接將新連結加入，會自動爬取該網站。
-2. **文字為主分區（Zone 2: 文字 PDF）**：下載中央大學學則等長文規章至 `res/data/raw/text_pdfs/`，以 `pymupdf4llm` 高速解析。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
-3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～114 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs/`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
+1. **網站分區（Zone 1: 網頁）**：爬取系所網頁內容並轉為 Markdown 儲存至 `res/data/markdown`。可以直接將新連結加入，會自動爬取該網站。
+2. **文字為主分區（Zone 2: 文字 PDF）**：下載中央大學學則等長文規章至 `res/data/raw/text_pdfs`，以 `pymupdf4llm` 高速解析。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
+3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～114 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
 
 ```bash
 # 完整同步：爬取系網頁面、下載最新規章 PDF、表格轉換並寫入向量庫
@@ -135,7 +135,7 @@ python sync_data.py
 | 參數 | 說明 | 適用情境 |
 | :--- | :--- | :--- |
 | *(無參數)* | 執行完整爬蟲 + Gemini 表格轉 Markdown + 解析分塊 + 清除舊庫並重新建立索引。 | 定期規章大改版或初次建庫。 |
-| `--skip-crawl` | **略過網路爬蟲與表格轉換**，僅重新解析本機 `res/data/` 現有文件並快速重建向量索引。 | 已手動加入新 PDF 或修訂 Markdown 時。 |
+| `--skip-crawl` | **略過網路爬蟲與表格轉換**，僅重新解析本機 `res/data` 現有文件並快速重建向量索引。 | 已手動加入新 PDF 或修訂 Markdown 時。 |
 | `--skip-llm-convert` | **執行爬蟲與下載，但略過 Gemini 表格轉 Markdown**，直接沿用既有 Markdown 快取。 | 更新網頁或下載新 PDF，但不想重複消耗 LLM Token 重新轉表時。 |
 | `--skip-converted` | **跳過已轉換過的表格 PDF**，若 Markdown 目錄中已存在同名檔案則略過該 PDF 的 Gemini 轉換。 | 爬取或新增 PDF 時，僅針對尚未轉換的檔案呼叫 LLM 轉表，節省 Token 與時間。 |
 | `--no-reset` | **不清空現有資料庫**，直接將新分塊追加（Upsert）進 ChromaDB。 | 單純擴充資料，保留原有向量時。 |
@@ -234,7 +234,7 @@ python main.py
 ## 7. 系統維護與客製化
 
 ### 增加手動 Markdown 文件
-若有尚未製作成網頁或 PDF 的常見問答（FAQ），可直接新增 Markdown 檔案至 `res/data/markdown/`（例如 `自訂常見問題集.md`），接著執行：
+若有尚未製作成網頁或 PDF 的常見問答（FAQ），可直接新增 Markdown 檔案至 `res/data/markdown`（例如 `自訂常見問題集.md`），接著執行：
 ```bash
 python sync_data.py --skip-crawl
 ```
