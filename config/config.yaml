@@ -19,6 +19,7 @@ embedding:
 rag:
   top_k: 9
   chunk_size: 800
+  chunk_mini: 100 #to avoid noisy small chunk
   chunk_overlap: 130
   collection_name: "ipeecs_knowledge_base"
 

@@ -18,8 +18,9 @@ class DocumentChunk:
 class DocumentParser:
     """Parses Markdown and text PDF documents into chunked documents."""
 
-    def __init__(self, chunk_size: int = 600, chunk_overlap: int = 100):
+    def __init__(self, chunk_size: int = 600, chunk_overlap: int = 100, chunk_mini: int = 100):
         self.chunk_size = chunk_size
+        self.chunk_mini = chunk_mini
         self.chunk_overlap = chunk_overlap
 
     def clean_text(self, text: str) -> str:
@@ -32,49 +33,6 @@ class DocumentParser:
         text = re.sub(r"[ \t]+", " ", text)
         text = re.sub(r"\n\s*\n+", "\n\n", text)
         return text.strip()
-
-    # def chunk_text(self, text: str, metadata: Dict[str, Any]) -> List[DocumentChunk]:
-    #     """Splits a single text into overlapping chunks."""
-    #     text = self.clean_text(text)
-    #     if not text:
-    #         return []
-    #
-    #     chunks: List[DocumentChunk] = []
-    #     start = 0
-    #     text_length = len(text)
-    #     chunk_index = 0
-    #
-    #     while start < text_length:
-    #         end = start + self.chunk_size
-    #         if end >= text_length:
-    #             chunk_str = text[start:]
-    #         else:
-    #             # Try to break at natural boundary (newline, period, question mark, semicolon)
-    #             sub = text[start:end]
-    #             cut = max(
-    #                 sub.rfind("\n"),
-    #                 sub.rfind("。"),
-    #                 sub.rfind("；"),
-    #                 sub.rfind("！"),
-    #                 sub.rfind("？"),
-    #                 sub.rfind(". "),
-    #             )
-    #             if cut > self.chunk_size // 2:
-    #                 end = start + cut + 1
-    #             chunk_str = text[start:end]
-    #
-    #         chunk_str = chunk_str.strip()
-    #         if len(chunk_str) > 20:  # Ignore tiny noisy chunks
-    #             meta = dict(metadata)
-    #             meta["chunk_index"] = chunk_index
-    #             chunks.append(DocumentChunk(content=chunk_str, metadata=meta))
-    #             chunk_index += 1
-    #
-    #         if end >= text_length:
-    #             break
-    #         start = end - self.chunk_overlap
-    #
-    #     return chunks
 
     def chunk_text(self, text: str, metadata: Dict[str, Any])-> List[DocumentChunk]:
         """Splits a single text into overlapping chunks."""
@@ -140,7 +98,7 @@ class DocumentParser:
                             end = start + cut + 1
                         chunk_str = sli[start:end]
 
-                    if len(chunk_str) > 20: # Ignore tiny noisy chunks
+                    if len(chunk_str) > self.chunk_mini: # Ignore tiny noisy chunks
                         meta = dict(metadata)
                         chunk_str = '#' + meta["title"] + '\n' + chunk_str
                         chunk_str = chunk_str.strip()

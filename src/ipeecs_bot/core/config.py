@@ -53,6 +53,7 @@ class Settings:
         rag_cfg = self._raw_config.get("rag", {})
         self.top_k = int(rag_cfg.get("top_k", 9))
         self.chunk_size = int(rag_cfg.get("chunk_size", 600))
+        self.chunk_mini = int(rag_cfg.get("chunk_mini", 100))
         self.chunk_overlap = int(rag_cfg.get("chunk_overlap", 100))
         self.collection_name = rag_cfg.get("collection_name", "ipeecs_knowledge_base")
 
