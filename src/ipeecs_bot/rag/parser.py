@@ -33,46 +33,124 @@ class DocumentParser:
         text = re.sub(r"\n\s*\n+", "\n\n", text)
         return text.strip()
 
-    def chunk_text(self, text: str, metadata: Dict[str, Any]) -> List[DocumentChunk]:
+    # def chunk_text(self, text: str, metadata: Dict[str, Any]) -> List[DocumentChunk]:
+    #     """Splits a single text into overlapping chunks."""
+    #     text = self.clean_text(text)
+    #     if not text:
+    #         return []
+    #
+    #     chunks: List[DocumentChunk] = []
+    #     start = 0
+    #     text_length = len(text)
+    #     chunk_index = 0
+    #
+    #     while start < text_length:
+    #         end = start + self.chunk_size
+    #         if end >= text_length:
+    #             chunk_str = text[start:]
+    #         else:
+    #             # Try to break at natural boundary (newline, period, question mark, semicolon)
+    #             sub = text[start:end]
+    #             cut = max(
+    #                 sub.rfind("\n"),
+    #                 sub.rfind("。"),
+    #                 sub.rfind("；"),
+    #                 sub.rfind("！"),
+    #                 sub.rfind("？"),
+    #                 sub.rfind(". "),
+    #             )
+    #             if cut > self.chunk_size // 2:
+    #                 end = start + cut + 1
+    #             chunk_str = text[start:end]
+    #
+    #         chunk_str = chunk_str.strip()
+    #         if len(chunk_str) > 20:  # Ignore tiny noisy chunks
+    #             meta = dict(metadata)
+    #             meta["chunk_index"] = chunk_index
+    #             chunks.append(DocumentChunk(content=chunk_str, metadata=meta))
+    #             chunk_index += 1
+    #
+    #         if end >= text_length:
+    #             break
+    #         start = end - self.chunk_overlap
+    #
+    #     return chunks
+
+    def chunk_text(self, text: str, metadata: Dict[str, Any])-> List[DocumentChunk]:
         """Splits a single text into overlapping chunks."""
         text = self.clean_text(text)
         if not text:
             return []
 
-        chunks: List[DocumentChunk] = []
-        start = 0
+        #Divide all text and tables
         text_length = len(text)
+        slices: List[str] = []
+        checker_start = 0
+        checker_end = 0
+        if '|' not in text: # If there's ain't any table, no need of slicing
+            checker_end = text_length
+        while checker_end < text_length:
+            if text[checker_end] == '|':
+                checker_end = text.rfind('#', checker_start,checker_end) + 1
+                if text[checker_start:checker_end]:
+                    slices.append(text[checker_start:checker_end])
+                checker_start = checker_end
+                checker_end = (
+                    text.find('#', checker_start, text_length)) \
+                    if text.find('#', checker_start, text_length) != -1 \
+                    else text_length
+                slices.append(text[checker_start:checker_end])
+                checker_start = checker_end
+
+            checker_end += 1
+        if text[checker_start:text_length]:
+            slices.append(text[checker_start:text_length])
+
+        #Dealing with categorized dic containing text and table
         chunk_index = 0
-
-        while start < text_length:
-            end = start + self.chunk_size
-            if end >= text_length:
-                chunk_str = text[start:]
-            else:
-                # Try to break at natural boundary (newline, period, question mark, semicolon)
-                sub = text[start:end]
-                cut = max(
-                    sub.rfind("\n"),
-                    sub.rfind("。"),
-                    sub.rfind("；"),
-                    sub.rfind("！"),
-                    sub.rfind("？"),
-                    sub.rfind(". "),
-                )
-                if cut > self.chunk_size // 2:
-                    end = start + cut + 1
-                chunk_str = text[start:end]
-
-            chunk_str = chunk_str.strip()
-            if len(chunk_str) > 20:  # Ignore tiny noisy chunks
+        chunks: List[DocumentChunk] = []
+        for sli in slices:
+            if '|' in sli:
                 meta = dict(metadata)
+                chunk_str = '#' + meta["title"] + '\n' + sli
+                chunk_str = chunk_str.strip()
                 meta["chunk_index"] = chunk_index
                 chunks.append(DocumentChunk(content=chunk_str, metadata=meta))
                 chunk_index += 1
+            else:
+                start = 0
+                sli_len = len(sli)
+                while start < sli_len:
+                    end = start + self.chunk_size
 
-            if end >= text_length:
-                break
-            start = end - self.chunk_overlap
+                    if end >= sli_len:
+                        chunk_str = sli[start:]
+                    else:
+                        sub = sli[start:end]
+                        # Try to break at natural boundary (newline, period, question mark, semicolon)
+                        cut = max(
+                            sub.rfind("\n"),
+                            sub.rfind("。"),
+                            sub.rfind("；"),
+                            sub.rfind("！"),
+                            sub.rfind("？"),
+                            sub.rfind(". "),
+                        )
+                        if cut > self.chunk_size // 2:
+                            end = start + cut + 1
+                        chunk_str = sli[start:end]
+
+                    if len(chunk_str) > 20: # Ignore tiny noisy chunks
+                        meta = dict(metadata)
+                        chunk_str = '#' + meta["title"] + '\n' + chunk_str
+                        chunk_str = chunk_str.strip()
+                        meta["chunk_index"] = chunk_index
+                        chunks.append(DocumentChunk(content=chunk_str, metadata=meta))
+                        chunk_index += 1
+
+                    if end >= sli_len:
+                        break
+                    start = end - self.chunk_overlap
 
         return chunks
 
