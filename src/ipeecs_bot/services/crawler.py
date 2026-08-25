@@ -1,11 +1,15 @@
 """Web crawler and PDF downloader for Department regulations and FAQs."""
+import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urljoin, urlparse
 import requests
 import urllib3
 from bs4 import BeautifulSoup
+from google import genai
+from google.genai import types
 
 from ..core.logger import logger
 
@@ -14,13 +18,28 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class DataCrawler:
-    """Crawls department web pages to Markdown and downloads targeted regulation PDFs."""
+    """Crawls department web pages to Markdown, downloads PDFs, and converts table PDFs with Gemini."""
 
-    def __init__(self, raw_dir: Path, markdown_dir: Path):
+    def __init__(
+        self,
+        raw_dir: Path,
+        markdown_dir: Path,
+        gemini_api_key: Optional[str] = None,
+        gemini_model: str = "gemini-3.1-flash-lite",
+    ):
         self.raw_dir = Path(raw_dir)
         self.markdown_dir = Path(markdown_dir)
+        self.text_pdf_dir = self.raw_dir / "text_pdfs"
+        self.table_pdf_dir = self.raw_dir / "table_pdfs"
+
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.markdown_dir.mkdir(parents=True, exist_ok=True)
+        self.text_pdf_dir.mkdir(parents=True, exist_ok=True)
+        self.table_pdf_dir.mkdir(parents=True, exist_ok=True)
+
+        self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY") or ""
+        self.gemini_model = gemini_model
+        self.genai_client = genai.Client(api_key=self.gemini_api_key) if self.gemini_api_key else None
 
         self.headers = {
             "User-Agent": (
@@ -66,8 +85,10 @@ class DataCrawler:
         content = re.sub(r"\n{3,}", "\n\n", content).strip()
         return content
 
-    def download_pdf(self, pdf_url: str, save_name: str) -> Optional[Path]:
-        """Downloads a PDF file and saves it with a sanitized filename."""
+    def download_pdf(self, pdf_url: str, save_name: str, target_dir: Optional[Path] = None) -> Optional[Path]:
+        """Downloads a PDF file and saves it with a sanitized filename into the target directory."""
+        dest_dir = target_dir if target_dir else self.raw_dir
+        dest_dir.mkdir(parents=True, exist_ok=True)
         try:
             resp = requests.get(pdf_url, headers=self.headers, timeout=30, verify=False)
             if resp.status_code == 200 and len(resp.content) > 0:
@@ -75,10 +96,10 @@ class DataCrawler:
                 if not clean_name.lower().endswith(".pdf"):
                     clean_name += ".pdf"
 
-                pdf_path = self.raw_dir / clean_name
+                pdf_path = dest_dir / clean_name
                 with open(pdf_path, "wb") as f:
                     f.write(resp.content)
-                logger.info(f"Downloaded PDF: {clean_name} ({len(resp.content):,} bytes)")
+                logger.info(f"Downloaded PDF: {clean_name} ({len(resp.content):,} bytes) -> {dest_dir.name}/")
                 return pdf_path
             else:
                 logger.warning(f"Failed to download PDF (status {resp.status_code}): {pdf_url}")
@@ -111,18 +132,48 @@ class DataCrawler:
             logger.error(f"Error crawling Markdown page {url}: {e}", exc_info=True)
             return None
 
-    def crawl_pdc_regulations(self, pdc_base_url: str) -> List[Path]:
-        """Crawls PDC regulation directories and downloads target IPEECS PDFs.
+    def crawl_academic_rules_pdf(self, rules_url: str) -> List[Path]:
+        """Crawls National Central University Academic Rules (國立中央大學學則) page and downloads the PDF.
 
-        1. Finds links matching `[0-9]{3}教務章則` (e.g. 114教務章則彙編)
-        2. In each chapter page, finds link with title='國立中央大學各學士班應修科目及畢業條件目次表'
-        3. In the 目次表 page, downloads PDFs matching keywords:
-           - 資訊電機學院學士班
-           - 電機工程專長
-           - 資訊工程專長
-           - 通訊工程專長
-           - 網路工程專長
+        Matches title="國立中央大學學則（PDF，另開新視窗）" or link text containing 學則 and PDF.
         """
+        logger.info(f"Crawling NCU Academic Rules from: {rules_url}")
+        downloaded: List[Path] = []
+        try:
+            resp = self.fetch_url(rules_url)
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            found_link = None
+            for a in soup.find_all("a"):
+                title_attr = a.get("title", "")
+                text_content = a.get_text(strip=True)
+                combined = f"{text_content} {title_attr}"
+
+                if "國立中央大學學則" in combined and ("PDF" in combined or "pdf" in a.get("href", "").lower()):
+                    found_link = a
+                    break
+
+            if found_link:
+                href = found_link.get("href", "")
+                if href and not href.startswith("javascript"):
+                    pdf_url = urljoin(rules_url, href)
+                    saved = self.download_pdf(
+                        pdf_url,
+                        "國立中央大學學則.pdf",
+                        target_dir=self.text_pdf_dir,
+                    )
+                    if saved:
+                        downloaded.append(saved)
+            else:
+                logger.warning(f"Could not locate 國立中央大學學則 PDF link on page: {rules_url}")
+
+        except Exception as e:
+            logger.error(f"Error crawling Academic Rules PDF: {e}", exc_info=True)
+
+        return downloaded
+
+    def crawl_pdc_regulations(self, pdc_base_url: str) -> List[Path]:
+        """Crawls PDC regulation directories and downloads target IPEECS table PDFs into table_pdf_dir."""
         logger.info(f"Starting PDC regulations crawl from: {pdc_base_url}")
         downloaded_pdfs: List[Path] = []
         target_keywords = [
@@ -194,7 +245,11 @@ class DataCrawler:
                                     item_label = re.sub(r"[\r\n\t]+", "", item_label).strip()
                                     filename = f"{year}學年度_{item_label}"
 
-                                    saved_path = self.download_pdf(pdf_url, filename)
+                                    saved_path = self.download_pdf(
+                                        pdf_url,
+                                        filename,
+                                        target_dir=self.table_pdf_dir,
+                                    )
                                     if saved_path:
                                         downloaded_pdfs.append(saved_path)
                                     break
@@ -208,7 +263,7 @@ class DataCrawler:
         return downloaded_pdfs
 
     def crawl_course_regulation(self, course_base_url: str) -> List[Path]:
-        """Crawls Course NCU and downloads 「創意與創業」學分學程選修辦法 PDF."""
+        """Crawls Course NCU and downloads 「創意與創業」學分學程選修辦法 PDF into table_pdf_dir."""
         logger.info(f"Starting Course NCU crawl from: {course_base_url}")
         downloaded_pdfs: List[Path] = []
 
@@ -222,16 +277,24 @@ class DataCrawler:
                 href = a.get("href", "")
 
                 # Match title="「創意與創業」學分學程選修辦法(另開新視窗)"
-                if "創意與創業" in title_attr and "選修辦法" in title_attr:
+                if ("創意與創業" in title_attr or "創意創業" in title_attr) and ("選修辦法" in title_attr or "辦法" in title_attr):
                     if href and not href.startswith("javascript"):
                         pdf_url = urljoin(course_base_url, href)
-                        saved_path = self.download_pdf(pdf_url, "「創意與創業」學分學程選修辦法.pdf")
+                        saved_path = self.download_pdf(
+                            pdf_url,
+                            "「創意與創業」學分學程選修辦法.pdf",
+                            target_dir=self.table_pdf_dir,
+                        )
                         if saved_path:
                             downloaded_pdfs.append(saved_path)
-                elif "創意與創業" in text_content and ("辦法" in text_content or "pdf" in href.lower()):
+                elif ("創意與創業" in text_content or "創意創業" in text_content) and ("辦法" in text_content or "pdf" in href.lower()):
                     if href and not href.startswith("javascript"):
                         pdf_url = urljoin(course_base_url, href)
-                        saved_path = self.download_pdf(pdf_url, "「創意與創業」學分學程選修辦法.pdf")
+                        saved_path = self.download_pdf(
+                            pdf_url,
+                            "「創意與創業」學分學程選修辦法.pdf",
+                            target_dir=self.table_pdf_dir,
+                        )
                         if saved_path:
                             downloaded_pdfs.append(saved_path)
 
@@ -241,12 +304,108 @@ class DataCrawler:
         logger.info(f"Course NCU crawl completed. Downloaded {len(downloaded_pdfs)} PDFs.")
         return downloaded_pdfs
 
+    def convert_pdf_to_markdown_gemini(
+        self,
+        pdf_path: Path,
+        output_md_path: Path,
+        max_retries: int = 5,
+    ) -> Optional[Path]:
+        """Sends a table-heavy PDF to Gemini to extract clean Markdown tables and rules."""
+        if not self.genai_client:
+            logger.warning(f"Gemini client not configured. Skipping Gemini conversion for {pdf_path.name}")
+            return None
+
+        prompt = (
+            "你是一個專業的國立中央大學學術規章與學分學程表格整理專家。"
+            "請將這份 PDF 文件完整轉換為結構清晰、語意完整且易於檢索的繁體中文 Markdown 格式。\n\n"
+            "轉換要求：\n"
+            "1. 完整保留並重現所有表格結構（使用標準 Markdown 表格語法 | 表頭1 | 表頭2 | ...）。\n"
+            "2. 清晰列出所有學年度、專長名稱（如電機工程專長、資訊工程專長、通訊工程專長、網路工程專長或學士班）、"
+            "必修與選修科目名稱、科目代碼、學分數以及畢業修業條件與學分要求規範。\n"
+            "3. 完整保留所有附註、備註說明與各項規章要點，不要省略任何一條規則。\n"
+            "4. 直接輸出完整的 Markdown 內容，不要包含多餘的聊天對話或開場白。"
+        )
+
+        try:
+            with open(pdf_path, "rb") as f:
+                pdf_bytes = f.read()
+
+            for attempt in range(1, max_retries + 1):
+                try:
+                    response = self.genai_client.models.generate_content(
+                        model=self.gemini_model,
+                        contents=[
+                            types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                            prompt,
+                        ],
+                    )
+
+                    if response and response.text:
+                        cleaned_text = response.text.strip()
+                        if cleaned_text.startswith("```markdown"):
+                            cleaned_text = cleaned_text[len("```markdown"):].strip()
+                        elif cleaned_text.startswith("```"):
+                            cleaned_text = cleaned_text[3:].strip()
+                        if cleaned_text.endswith("```"):
+                            cleaned_text = cleaned_text[:-3].strip()
+
+                        with open(output_md_path, "w", encoding="utf-8") as f:
+                            f.write(f"# {pdf_path.stem}\n\n{cleaned_text}\n")
+
+                        logger.info(f"Gemini converted table PDF: {pdf_path.name} -> {output_md_path.name}")
+                        return output_md_path
+                    else:
+                        logger.warning(f"Empty Gemini response for {pdf_path.name}")
+                        break
+
+                except Exception as api_err:
+                    err_str = str(api_err)
+                    if "429" in err_str or "503" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                        wait_time = attempt * 6.0
+                        logger.warning(f"Rate limit / Busy ({err_str[:80]}). Waiting {wait_time}s before retry ({attempt}/{max_retries})...")
+                        time.sleep(wait_time)
+                    else:
+                        logger.error(f"Gemini API error on {pdf_path.name}: {api_err}")
+                        break
+
+        except Exception as e:
+            logger.error(f"Failed to read/convert PDF {pdf_path}: {e}")
+
+        return None
+
+    def convert_all_table_pdfs(self, skip_converted: bool = False) -> List[Path]:
+        """Converts all downloaded table PDFs in table_pdf_dir into Markdown files in markdown_dir.
+
+        If skip_converted is True, skips converting PDFs whose corresponding markdown files already exist.
+        """
+        table_pdfs = list(self.table_pdf_dir.glob("*.pdf"))
+        logger.info(f"Converting {len(table_pdfs)} table PDFs to Markdown via Gemini ({self.gemini_model})...")
+        converted_mds: List[Path] = []
+
+        for pdf_file in table_pdfs:
+            md_filename = f"{pdf_file.stem}.md"
+            out_md_path = self.markdown_dir / md_filename
+
+            if skip_converted and out_md_path.exists() and out_md_path.stat().st_size > 0:
+                logger.info(f"Skipping already converted table PDF: {pdf_file.name} (found {out_md_path.name})")
+                converted_mds.append(out_md_path)
+                continue
+
+            res = self.convert_pdf_to_markdown_gemini(pdf_file, out_md_path)
+            if res:
+                converted_mds.append(res)
+            # Sleep briefly between calls to stay well within Gemini API limits
+            time.sleep(2.0)
+
+        logger.info(f"Successfully converted/prepared {len(converted_mds)}/{len(table_pdfs)} table PDFs in Markdown.")
+        return converted_mds
+
     def parse_urls_file(self, urls_file: Path) -> Dict[str, List[Tuple[str, str]]]:
-        """Parses urls.txt into markdown targets and special PDF update targets."""
+        """Parses urls.txt into 3 sections: web, text_pdf, table_pdf."""
         sections: Dict[str, List[Tuple[str, str]]] = {
-            "markdown_pages": [],
-            "pdc_regulations": [],
-            "course_regulations": [],
+            "web": [],
+            "text_pdf": [],
+            "table_pdf": [],
         }
 
         if not urls_file.exists():
@@ -256,15 +415,23 @@ class DataCrawler:
         with open(urls_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        current_mode = "markdown"
+        current_section = "web"
 
         for raw_line in lines:
             line = raw_line.strip()
             if not line:
                 continue
 
-            if "pdf 檔案更新區" in line.lower() or "pdf 檔案" in line:
-                current_mode = "pdf"
+            # Identify section transitions
+            lower_line = line.lower()
+            if "//網站" in lower_line or "// 網站" in lower_line:
+                current_section = "web"
+                continue
+            elif "文字為主" in lower_line:
+                current_section = "text_pdf"
+                continue
+            elif "大量表格" in lower_line or "表格為主" in lower_line:
+                current_section = "table_pdf"
                 continue
 
             if line.startswith("//") or line.startswith("#"):
@@ -279,49 +446,76 @@ class DataCrawler:
                     url = line.strip()
                     title = url
 
-                # Determine target type
-                if "pdc.adm.ncu.edu.tw" in url:
-                    sections["pdc_regulations"].append((title, url))
-                elif "course.ncu.edu.tw" in url:
-                    sections["course_regulations"].append((title, url))
-                elif current_mode == "markdown" or "ipeecs.ncu.edu.tw" in url:
-                    sections["markdown_pages"].append((title, url))
-                else:
-                    sections["markdown_pages"].append((title, url))
+                sections[current_section].append((title, url))
 
         return sections
 
-    def crawl_all(self, urls_file: Path) -> Dict[str, Any]:
-        """Executes full crawl based on urls.txt."""
+    def crawl_all(
+        self,
+        urls_file: Path,
+        skip_llm_convert: bool = False,
+        skip_converted: bool = False,
+    ) -> Dict[str, Any]:
+        """Executes full 3-zone crawl based on urls.txt."""
         logger.info(f"Parsing URLs config from: {urls_file}")
         targets = self.parse_urls_file(urls_file)
 
         results: Dict[str, Any] = {
             "markdown_files": [],
-            "pdf_files": [],
+            "text_pdf_files": [],
+            "table_pdf_files": [],
+            "converted_table_markdowns": [],
         }
 
-        # 1. Crawl Web Pages to Markdown
-        logger.info(f"Crawling {len(targets['markdown_pages'])} web pages to Markdown...")
-        for title, url in targets["markdown_pages"]:
+        # Zone 1: Crawl Web Pages directly to Markdown
+        logger.info(f"--- [Zone 1] Crawling {len(targets['web'])} Web Pages to Markdown ---")
+        for title, url in targets["web"]:
             md_path = self.crawl_markdown_page(title, url)
             if md_path:
                 results["markdown_files"].append(md_path)
 
-        # 2. Crawl PDC Regulations
-        for title, url in targets["pdc_regulations"]:
-            logger.info(f"Crawling PDC Regulation target: {title} ({url})")
-            pdfs = self.crawl_pdc_regulations(url)
-            results["pdf_files"].extend(pdfs)
+        # Zone 2: Crawl Text-Dominant PDFs
+        logger.info(f"--- [Zone 2] Crawling {len(targets['text_pdf'])} Text-Dominant PDF Sources ---")
+        for title, url in targets["text_pdf"]:
+            if "pdc.adm.ncu.edu.tw" in url and ("1993" in url or "學則" in title):
+                pdfs = self.crawl_academic_rules_pdf(url)
+                results["text_pdf_files"].extend(pdfs)
+            elif url.lower().endswith(".pdf"):
+                saved = self.download_pdf(url, title, target_dir=self.text_pdf_dir)
+                if saved:
+                    results["text_pdf_files"].append(saved)
+            else:
+                # Generic fallback for text PDF page
+                pdfs = self.crawl_academic_rules_pdf(url)
+                results["text_pdf_files"].extend(pdfs)
 
-        # 3. Crawl Course Regulations
-        for title, url in targets["course_regulations"]:
-            logger.info(f"Crawling Course NCU target: {title} ({url})")
-            pdfs = self.crawl_course_regulation(url)
-            results["pdf_files"].extend(pdfs)
+        # Zone 3: Crawl Table-Dominant PDFs & Convert to Markdown via Gemini
+        logger.info(f"--- [Zone 3] Crawling {len(targets['table_pdf'])} Table-Dominant PDF Sources ---")
+        for title, url in targets["table_pdf"]:
+            if "pdc.adm.ncu.edu.tw" in url:
+                pdfs = self.crawl_pdc_regulations(url)
+                results["table_pdf_files"].extend(pdfs)
+            elif "course.ncu.edu.tw" in url:
+                pdfs = self.crawl_course_regulation(url)
+                results["table_pdf_files"].extend(pdfs)
+            elif url.lower().endswith(".pdf"):
+                saved = self.download_pdf(url, title, target_dir=self.table_pdf_dir)
+                if saved:
+                    results["table_pdf_files"].append(saved)
+
+        # Convert table PDFs to Markdown via Gemini
+        if not skip_llm_convert:
+            if results["table_pdf_files"] or list(self.table_pdf_dir.glob("*.pdf")):
+                converted = self.convert_all_table_pdfs(skip_converted=skip_converted)
+                results["converted_table_markdowns"].extend(converted)
+        else:
+            logger.info("Skipping Gemini table-to-markdown conversion (--skip-llm-convert enabled).")
 
         logger.info(
-            f"Crawl All Finished. Saved {len(results['markdown_files'])} Markdown files, "
-            f"{len(results['pdf_files'])} PDF files."
+            f"=== Crawl & Conversion Finished ===\n"
+            f"  - Web Markdowns: {len(results['markdown_files'])}\n"
+            f"  - Text PDFs: {len(results['text_pdf_files'])}\n"
+            f"  - Table PDFs Downloaded: {len(results['table_pdf_files'])}\n"
+            f"  - Table PDFs Converted to Markdown: {len(results['converted_table_markdowns'])}\n"
         )
         return results

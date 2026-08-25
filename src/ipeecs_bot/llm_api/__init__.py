@@ -26,6 +26,8 @@ def get_embedding_provider(settings: Settings) -> BaseEmbeddingProvider:
         return GeminiEmbeddingProvider(
             api_key=settings.gemini_api_key,
             model_name=settings.embed_model,
+            batch_size=settings.embed_batch_size,
+            delay_seconds=settings.embed_delay_seconds,
         )
     elif provider_name == "local":
         return LocalEmbeddingProvider(model_name=settings.embed_model)

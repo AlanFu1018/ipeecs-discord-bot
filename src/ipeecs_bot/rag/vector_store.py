@@ -26,95 +26,85 @@ class VectorStore:
             path=str(self.persist_dir),
             settings=ChromaSettings(anonymized_telemetry=False),
         )
-        col = self._get_collection()
-        logger.info(
-            f"Initialized VectorStore at {self.persist_dir} (Collection: {self.collection_name}, Docs: {col.count()})"
-        )
-
-    def _get_collection(self):
-        """Retrieves or creates the current Chroma collection dynamically."""
-        return self.client.get_or_create_collection(
+        self.collection = self.client.get_or_create_collection(
             name=self.collection_name,
             metadata={"hnsw:space": "cosine"},
+        )
+        logger.info(
+            f"Initialized VectorStore at {self.persist_dir} (Collection: {self.collection_name}, Docs: {self.collection.count()})"
         )
 
     def count(self) -> int:
         """Returns the total number of document chunks stored."""
-        return self._get_collection().count()
+        return self.collection.count()
 
     def reset_collection(self) -> None:
-        """Deletes all existing items in current collection safely without breaking UUID handles."""
+        """Clears all existing documents in the current collection."""
         try:
-            col = self._get_collection()
-            existing = col.get()
-            if existing and existing.get("ids") and len(existing["ids"]) > 0:
-                col.delete(ids=existing["ids"])
-            logger.info(f"Reset collection: {self.collection_name} (cleared existing docs)")
+            existing = self.collection.get()
+            existing_ids = existing.get("ids", [])
+            if existing_ids:
+                self.collection.delete(ids=existing_ids)
+                logger.info(f"Reset collection by removing {len(existing_ids)} items: {self.collection_name}")
+            else:
+                logger.info(f"Collection {self.collection_name} is already empty.")
         except Exception as e:
             logger.error(f"Error resetting collection: {e}")
 
-    def add_chunks_sync(self, chunks: List[DocumentChunk], batch_size: int = 50) -> int:
+    def add_chunks_sync(self, chunks: List[DocumentChunk]) -> int:
         """Generates embeddings and stores document chunks synchronously."""
         if not chunks:
             logger.warning("No chunks provided to add.")
             return 0
 
-        logger.info(f"Embedding and indexing {len(chunks)} chunks...")
-        total_added = 0
+        logger.info(f"Generating embeddings for {len(chunks)} chunks...")
+        texts = [chunk.content for chunk in chunks]
+        ids = [f"chunk_{idx}" for idx in range(len(chunks))]
+        metadatas = [chunk.metadata for chunk in chunks]
 
-        for i in range(0, len(chunks), batch_size):
-            batch = chunks[i : i + batch_size]
-            texts = [chunk.content for chunk in batch]
-            ids = [
-                f"{chunk.metadata.get('source', 'doc')}_{chunk.metadata.get('chunk_index', idx)}_{i + idx}"
-                for idx, chunk in enumerate(batch)
-            ]
-            metadatas = [chunk.metadata for chunk in batch]
+        # embed_documents_sync batches internally and respects rate pacing
+        embeddings = self.embedding_provider.embed_documents_sync(texts)
 
-            embeddings = self.embedding_provider.embed_documents_sync(texts)
-            col = self._get_collection()
-            col.upsert(
-                ids=ids,
-                documents=texts,
-                embeddings=embeddings,
-                metadatas=metadatas,
+        logger.info(f"Writing {len(chunks)} embeddings into ChromaDB collection '{self.collection_name}'...")
+        chroma_batch_size = 100
+        for i in range(0, len(chunks), chroma_batch_size):
+            end_idx = i + chroma_batch_size
+            self.collection.add(
+                ids=ids[i:end_idx],
+                documents=texts[i:end_idx],
+                embeddings=embeddings[i:end_idx],
+                metadatas=metadatas[i:end_idx],
             )
-            total_added += len(batch)
-            logger.info(f"Indexed batch {i // batch_size + 1}: {total_added}/{len(chunks)} chunks")
 
-        logger.info(f"Successfully indexed total {total_added} chunks in VectorStore.")
-        return total_added
+        logger.info(f"Successfully indexed total {len(chunks)} chunks in VectorStore.")
+        return len(chunks)
 
-    async def add_chunks(self, chunks: List[DocumentChunk], batch_size: int = 50) -> int:
+    async def add_chunks(self, chunks: List[DocumentChunk]) -> int:
         """Generates embeddings and stores document chunks asynchronously."""
         if not chunks:
             logger.warning("No chunks provided to add.")
             return 0
 
-        logger.info(f"Asynchronously embedding and indexing {len(chunks)} chunks...")
-        total_added = 0
+        logger.info(f"Asynchronously generating embeddings for {len(chunks)} chunks...")
+        texts = [chunk.content for chunk in chunks]
+        ids = [f"chunk_{idx}" for idx in range(len(chunks))]
+        metadatas = [chunk.metadata for chunk in chunks]
 
-        for i in range(0, len(chunks), batch_size):
-            batch = chunks[i : i + batch_size]
-            texts = [chunk.content for chunk in batch]
-            ids = [
-                f"{chunk.metadata.get('source', 'doc')}_{chunk.metadata.get('chunk_index', idx)}_{i + idx}"
-                for idx, chunk in enumerate(batch)
-            ]
-            metadatas = [chunk.metadata for chunk in batch]
+        embeddings = await self.embedding_provider.embed_documents(texts)
 
-            embeddings = await self.embedding_provider.embed_documents(texts)
-            col = self._get_collection()
-            col.upsert(
-                ids=ids,
-                documents=texts,
-                embeddings=embeddings,
-                metadatas=metadatas,
+        logger.info(f"Writing {len(chunks)} embeddings into ChromaDB collection '{self.collection_name}'...")
+        chroma_batch_size = 100
+        for i in range(0, len(chunks), chroma_batch_size):
+            end_idx = i + chroma_batch_size
+            self.collection.add(
+                ids=ids[i:end_idx],
+                documents=texts[i:end_idx],
+                embeddings=embeddings[i:end_idx],
+                metadatas=metadatas[i:end_idx],
             )
-            total_added += len(batch)
 
-        logger.info(f"Successfully indexed total {total_added} chunks.")
-        return total_added
+        logger.info(f"Successfully indexed total {len(chunks)} chunks in VectorStore.")
+        return len(chunks)
 
     async def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """Performs vector similarity search asynchronously."""
@@ -123,8 +113,7 @@ class VectorStore:
             logger.warning(f"Could not generate embedding for query: {query}")
             return []
 
-        col = self._get_collection()
-        results = col.query(
+        results = self.collection.query(
             query_embeddings=[query_vector],
             n_results=top_k,
         )
@@ -153,8 +142,7 @@ class VectorStore:
             logger.warning(f"Could not generate embedding for query: {query}")
             return []
 
-        col = self._get_collection()
-        results = col.query(
+        results = self.collection.query(
             query_embeddings=[query_vector],
             n_results=top_k,
         )

@@ -1,63 +1,33 @@
 # 國立中央大學資電學士班智能客服機器人 — 使用手冊 (User Guide)
 
-歡迎使用 **國立中央大學資訊電機學院學士班（IPEECS）智能客服機器人**。本手冊旨在提供使用者、助教及系統管理員長遠的操作與維運指引，涵蓋環境部署、資料庫同步（爬蟲與表格轉換）、RAG 核心架構解析、Discord 互動操作以及常見問題排解。
+歡迎使用 **國立中央大學資訊電機學院學士班（IPEECS）智能客服機器人**。本手冊旨在提供使用者操作與維運指引，及常見問題排解。
 
 ---
 
 ## 📖 目錄
 1. [系統概述與核心功能](#1-系統概述與核心功能)
-2. [RAG 核心運作機制與技術細節](#2-rag-核心運作機制與技術細節)
-3. [環境需求與前置準備](#3-環境需求與前置準備)
-4. [安裝與設定指南](#4-安裝與設定指南)
-5. [知識庫資料同步 (sync_data.py)](#5-知識庫資料同步-sync_datapy)
-6. [啟動與運行機器人 (main.py)](#6-啟動與運行機器人-mainpy)
-7. [Discord 互動與提問指引](#7-discord-互動與提問指引)
-8. [常見問題排解 (FAQ)](#8-常見問題排解-faq)
-9. [系統維護與客製化](#9-系統維護與客製化)
+2. [環境需求與前置準備](#3-環境需求與前置準備)
+3. [安裝與設定指南](#4-安裝與設定指南)
+4. [知識庫資料同步 (sync_data.py)](#5-知識庫資料同步-sync_datapy)
+5. [啟動與運行機器人 (main.py)](#6-啟動與運行機器人-mainpy)
+6. [Discord 互動與提問指引](#7-discord-互動與提問指引)
+7. [系統維護與客製化](#9-系統維護與客製化)
 
 ---
 
 ## 1. 系統概述與核心功能
 
-本機器人專為中央大學資電學士班設計，基於 **檢索增強生成（RAG）** 技術與 **Google Gemini LLM**，提供以下核心價值：
-
-- **一對一私訊諮詢 (DM)**：所有對話皆在私訊中進行，保護學生修課隱私且不干擾公開伺服器。若在伺服器公頻中 `@機器人`，機器人會主動引導使用者至私訊進行提問。
+- **一對一私訊諮詢 (DM)**：所有對話皆在私訊中進行，保護學生修課隱私且不干擾公開伺服器。
 - **高精確度規章檢索**：自動爬取並索引 109～114 學年度各專長課規（資工、電機、通訊、網工）、中央大學學則、創意與創業學分學程及系網資訊，回答均標註來源。
 - **Gemini 多模態表格轉 Markdown 技術**：針對大量複雜表格的修業規章 PDF，透過 Gemini 多模態解析轉換為乾淨 Markdown 表格再分塊索引，大幅提升表格檢索精確度。
 - **多輪對話改寫 (Query Condensing)**：具備代名詞與省略語還原能力（例如接續問「那大三呢？」、「抵免門檻是多少？」），自動改寫為獨立語意問句後進行精準向量檢索。
-- **嚴格規範回答格式**：
-  - 嚴格區分「**院訂必修**」與「**院訂必選**」。
-  - 回答時禁止輸出 Markdown 語法表格，一律以**條列式（Bullet Points）**呈現，易於在 Discord 手機與桌面端閱讀。
 - **主動追問與引導**：當使用者問題較為籠統（如未指明入學學年度或專長領域）時，機器人會先給予概述並親切追問細節以提供最精確答案。
 - **嚴謹的 Fallback 機制**：遇查無資料、超出範圍或系統異常時，嚴禁模型幻覺，並統一附上資電學士班系辦公室的聯絡資訊。
 - **訊息長度自動分段**：針對超過 Discord 2000 字元上限的長回覆，自動分段循序發送，確保資訊完整不中斷。
-- **模組化 Adapter 設計**：支援隨時抽換 LLM（Gemini / OpenAI / 本地模型）與 Embedding 模組。
 
 ---
 
-## 2. RAG 核心運作機制與技術細節
-
-### (1) 文件切塊機制 (Chunking Strategy)
-位於 `src/ipeecs_bot/rag/parser.py`，採用 **語意自然斷句的滑動視窗切塊法 (Boundary-Aware Sliding Window)**：
-- **切塊長度 (`chunk_size`)**：預設 600 字元。
-- **重疊長度 (`chunk_overlap`)**：預設 100 字元，避免語意在邊界處截斷。
-- **智慧斷句貼齊**：在視窗後半段自動尋找繁中标點符號（`\n`、`。`、`；`、`！`、`？`、`. `）進行邊界切齊。
-- **微小雜訊過濾**：自動過濾長度小於 20 字元的碎片 Chunk。
-
-### (2) 向量化與資料庫儲存 (Vector Store)
-位於 `src/ipeecs_bot/rag/vector_store.py`：
-- **底層儲存**：基於 **ChromaDB** 進行本地磁碟持久化儲存（`res/data/chroma_db/`）。
-- **相似度演算法**：採用 **Cosine Distance（餘弦距離）**。
-- **防速率限制 (Rate Pacing)**：針對免費或低頻寬 API，批次 Embedding（預設批次 10 筆，冷卻 5.0 秒），避免觸發 `HTTP 429 Too Many Requests`。
-
-### (3) 對話記憶與代名詞還原 (Session & Query Rewriting)
-位於 `src/ipeecs_bot/services/session.py` 與 `chat_service.py`：
-- **短期滑動記憶**：每個使用者獨立 Session，預設保存最近 5 輪問答（10 則訊息），閒置超過 15 分鐘自動重置。
-- **查詢還原改寫**：提問前將歷史對話與最新輸入送入 LLM，將「那大三呢？」自動補齊為主詞完整的單一搜尋句（如「113學年度資電學士班大三必修科目有哪些？」）再進行檢索。
-
----
-
-## 3. 環境需求與前置準備
+## 2. 環境需求與前置準備
 
 ### 系統需求
 - **作業系統**：Windows / Linux / macOS
@@ -66,16 +36,16 @@
 
 ### 申請金鑰與憑證
 1. **Discord Bot Token**：
-   - 前往 [Discord Developer Portal](https://discord.com/developers/applications) 建立 Application。
-   - 進入 **Bot** 分頁，建立 Bot 並複製 Token。
-   - **重要**：在 **Privileged Gateway Intents** 區塊中，開啟 **`MESSAGE CONTENT INTENT`**。
-   - 在 **OAuth2 -> URL Generator** 中勾選 `bot` 及相應權限（如 Send Messages、Read Message History），生成邀請連結將機器人加入伺服器。
+    - 前往 [Discord Developer Portal](https://discord.com/developers/applications) 建立 Application。
+    - 進入 **Bot** 分頁，建立 Bot 並複製 Token。
+    - **重要**：在 **Privileged Gateway Intents** 區塊中，開啟 **`MESSAGE CONTENT INTENT`**。
+    - 在 **OAuth2 -> URL Generator** 中勾選 `bot` 及相應權限（如 Send Messages、Read Message History），生成邀請連結將機器人加入伺服器。
 2. **Google Gemini API Key**：
-   - 前往 [Google AI Studio](https://aistudio.google.com/) 申請 API Key。
+    - 前往 [Google AI Studio](https://aistudio.google.com/) 申請 API Key。
 
 ---
 
-## 4. 安裝與設定指南
+## 3. 安裝與設定指南
 
 ### 步驟 1：建立虛擬環境並安裝套件
 在專案根目錄開啟終端機（Terminal）：
@@ -107,7 +77,7 @@ GEMINI_API_KEY="你的_GEMINI_API_KEY"
 ```yaml
 bot:
   command_prefix: "!"
-  session_timeout_minutes: 15     # 對話閒置過期時間 (分鐘)
+  session_timeout_minutes: 60     # 對話閒置過期時間 (分鐘)
   max_history_turns: 5           # 記憶對話輪數上限
 
 llm:
@@ -145,15 +115,15 @@ department_info:
 
 ---
 
-## 5. 知識庫資料同步 (sync_data.py)
+## 4. 知識庫資料同步 (sync_data.py)
 
-當系所規章有更新、或初次部署專案時，需執行 `sync_data.py` 建立／更新向量資料庫。
+當系所規章有更新、或初次部署專案時，需執行 `sync_data.py` 建立／更新向量資料庫，並重啟機器人。
 
 ### 三分區爬取與轉換架構
 資料爬蟲將 `config/urls.txt` 中的目標分為三個分區處理：
-1. **網站分區（Zone 1: 網頁）**：爬取系所網頁內容並轉為 Markdown 儲存至 `res/data/markdown/`。
-2. **文字為主分區（Zone 2: 文字 PDF）**：下載中央大學學則等長文規章至 `res/data/raw/text_pdfs/`，以 `pymupdf4llm` 高速解析。
-3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～114 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs/`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。
+1. **網站分區（Zone 1: 網頁）**：爬取系所網頁內容並轉為 Markdown 儲存至 `res/data/markdown/`。可以直接將新連結加入，會自動爬取該網站。
+2. **文字為主分區（Zone 2: 文字 PDF）**：下載中央大學學則等長文規章至 `res/data/raw/text_pdfs/`，以 `pymupdf4llm` 高速解析。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
+3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～114 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs/`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
 
 ```bash
 # 完整同步：爬取系網頁面、下載最新規章 PDF、表格轉換並寫入向量庫
@@ -184,7 +154,7 @@ python sync_data.py --skip-converted
 
 ---
 
-## 6. 啟動與運行機器人 (main.py)
+## 5. 啟動與運行機器人 (main.py)
 
 資料庫同步完成後，即可啟動 Discord 機器人：
 
@@ -207,7 +177,7 @@ python main.py
 
 ---
 
-## 7. Discord 互動與提問指引
+## 6. Discord 互動與提問指引
 
 ### 如何開始使用
 1. 在 Discord 伺服器成員名單中找到機器人。
@@ -222,18 +192,18 @@ python main.py
 #### 情境 1：明確條件查詢
 > **使用者**：請問 113 學年度入學的資工專長，大二必修有哪些？  
 > **機器人**：  
-> 113 學年度資訊工程專長大二必修課程如下：  
-> - 資料結構（3學分）  
-> - 演算法（3學分）  
+> 113 學年度資訊工程專長大二必修課程如下：
+> - 資料結構（3學分）
+> - 演算法（3學分）
 > - 物件導向程式設計（3學分）  
-> ...  
-> 📌 參考來源：`113學年度_資訊工程專長.pdf`
+    > ...  
+    > 📌 參考來源：`113學年度_資訊工程專長.pdf`
 
 #### 情境 2：籠統問題（機器人主動追問）
 > **使用者**：畢業門檻是多少學分？  
 > **機器人**：  
-> 資電學士班最低畢業學分為 **128 學分**，包含共同必修（25學分）、院訂必修（25學分）、院訂必選（至少6學分）、專長領域必選修及創意創業學分學程等。  
->   
+> 資電學士班最低畢業學分為 **128 學分**，包含共同必修（25學分）、院訂必修（25學分）、院訂必選（至少6學分）、專長領域必選修及創意創業學分學程等。
+>
 > 請問您是**哪一學年度入學**？或是目前選擇哪一個**專長領域**（資訊工程／電機工程／通訊工程／網路工程）呢？告訴我後我能為您提供更精確的學分明細喔！
 
 #### 情境 3：多輪連續追問（代名詞自動還原）
@@ -243,8 +213,8 @@ python main.py
 #### 情境 4：超出範圍／無資料（安全附帶系辦資訊）
 > **使用者**：請問資電學士班學生的宿舍保證住幾年？  
 > **機器人**：  
-> 我目前在規章資料庫中查無足夠的相關資訊（問題超出規章範圍或查無記錄）。  
->   
+> 我目前在規章資料庫中查無足夠的相關資訊（問題超出規章範圍或查無記錄）。
+>
 > 若我有無法回答的問題，或是需要進一步協助，也歡迎透過以下方式聯繫系辦公室：  
 > 🏢 **資訊電機學院學士班辦公室**  
 > 📞 **電話**：03-4227151 分機 35007  
@@ -261,46 +231,7 @@ python main.py
 
 ---
 
-## 8. 常見問題排解 (FAQ)
-
-### Q1: 機器人在 Discord 上顯示離線或沒有回應？
-1. **檢查 Token**：確認 `.env` 中的 `DISCORD_BOT_TOKEN` 是否正確填寫且無多餘引號或空白。
-2. **檢查 Privileged Intents**：確認 Discord Developer Portal 中的 **Message Content Intent** 是否已開啟。
-3. **確認是否在私訊中提問**：本機器人預設在 **DM（一對一私訊）** 中回答；在群組伺服器公開頻道提及時，機器人會指引至私訊對話。
-
-### Q2: 429 Rate Limit 與 Context Window Exceeded 有何不同？
-- **429 Rate Limit (Too Many Requests)**：單位時間內**呼叫頻率過快或總次數超標**（例如免費版 API 每分鐘呼叫限制）。
-  - *解決方案*：調整 `config.yaml` 內的 `delay_seconds` 增加請求間隔，或在 `embed_gemini.py` 內建的 Exponential Backoff 重試機制自動處理。
-- **Context Window Exceeded**：**單次送出的文字總 Token 數**超過了模型的上下文視窗上限。
-  - *解決方案*：透過 `parser.py` 的文字分塊（Chunking，預設 600 字）將大文件切分，即可確保單次檢索內容完全不超出上限。
-
-### Q3: 執行 `sync_data.py` 時報錯 `GEMINI_API_KEY is not configured`？
-- 請在 `.env` 中設定 `GEMINI_API_KEY="你的Key"`。表格轉 Markdown 與向量 Embedding 均依賴此 API 金鑰。
-
-### Q4: 機器人回答內容與最新法規不符？
-- 可能是學校系網發布了新版本規章 PDF。
-- 請確認 `config/urls.txt` 連結是否最新，並重新執行 `python sync_data.py` 更新本地向量資料庫。
-
-### Q5: 收到長篇回覆時訊息是否會被截斷？
-- 不會。系統具備訊息自動拆分機制，超過 1900 字元的回覆會自動拆解為多則連續訊息發送。
-
----
-
-## 9. 系統維護與客製化
-
-### 調整目標爬蟲網址 (`config/urls.txt`)
-在 `config/urls.txt` 中可依三大分區加入新的系網頁面或教務規章網址，以 `//` 作為註解：
-```text
-// 網站
-系所簡介: https://www.ipeecs.ncu.edu.tw/introduction.html
-最新消息: https://www.ipeecs.ncu.edu.tw/news.html
-
-// 文字為主的 pdf
-國立中央大學學則: https://pdc.adm.ncu.edu.tw/...
-
-// 大量表格為主的 pdf
-歷年教務章則目錄: https://pdc.adm.ncu.edu.tw/rule/
-```
+## 7. 系統維護與客製化
 
 ### 增加手動 Markdown 文件
 若有尚未製作成網頁或 PDF 的常見問答（FAQ），可直接新增 Markdown 檔案至 `res/data/markdown/`（例如 `自訂常見問題集.md`），接著執行：
@@ -310,4 +241,3 @@ python sync_data.py --skip-crawl
 即可立即將自訂 QA 整合至機器人的知識庫中。
 
 ---
-*手冊維護人員：國立中央大學資訊電機學院學士班 開發團隊*
