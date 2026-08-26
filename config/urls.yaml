@@ -13,6 +13,9 @@ web:
   - ["校史沿革", "https://www.ncu.edu.tw/p/412-1000-97.php?Lang=zh-tw"]
   - ["交通方式-大眾運輸","https://www.ncu.edu.tw/p/412-1000-330.php?Lang=zh-tw"]
   - ["中央大學-聯絡我們","https://www.ncu.edu.tw/p/412-1000-321.php?Lang=zh-tw"]
+  #計算機中心
+  - ["計算機中心-帳號服務-新生帳號","https://www.cc.ncu.edu.tw/p/412-1033-117.php"]
+  - ["計算機中心-Google Workspace for Education","https://www.cc.ncu.edu.tw/p/412-1033-119.php"]
 
 text_pdf:
   - ["國立中央大學學則", "https://pdc.adm.ncu.edu.tw/p/412-1019-1993.php?Lang=zh-tw"] #title="國立中央大學學則（PDF，另開新視窗）"
@@ -22,3 +25,4 @@ text_pdf:
 table_pdf:
   - ["必修及專業科目畢業條件", "https://pdc.adm.ncu.edu.tw/p/412-1019-2070.php?Lang=zh-tw"] #11X教務章則彙編 >> 國立中央大學各學士班應修科目及畢業條件目次表 >> 資訊電機學院學士班
   - ["創意創業學分學程", "https://course.ncu.edu.tw/p/412-1014-2059.php?Lang=zh-tw"] #「創意與創業」學分學程 >> 選修辦法
+  - ["最新年度校曆", "https://pdc.adm.ncu.edu.tw/p/412-1019-1725.php?Lang=zh-tw"] #title="開啟 {年份最新的} 學年度校曆，另開新視窗"

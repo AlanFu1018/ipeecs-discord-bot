@@ -153,7 +153,7 @@ ipeecs-discord-bot/
 3. **申請 Google Gemini API Key**：取得 API Key 並建立 `.env` 設定檔。
 
 ### 【階段二：資料同步與 RAG 向量庫建立（`sync_data.py`）】
-1. 實作 `src/ipeecs_bot/services/crawler.py`：讀取 `urls.txt`，萃取主要正文轉換為 Markdown，並過濾出 PDF 檔案下載至 `res/data/raw/`。
+1. 實作 `../src/ipeecs_bot/services/crawler_main.py`：讀取 `urls.txt`，萃取主要正文轉換為 Markdown，並過濾出 PDF 檔案下載至 `res/data/raw/`。
 2. 實作 `src/ipeecs_bot/rag/parser.py`：清洗文字、去除多餘空行，將長文本切分為 500~800 字元的語意段落（Chunk），保留檔案來源 metadata。
 3. 實作 `src/ipeecs_bot/llm_api/embed_method/embed_gemini.py` 與 `src/ipeecs_bot/rag/vector_store.py`：將文本塊批次轉換為向量，寫入本地 ChromaDB。
 4. 撰寫 `sync_data.py` 整合以上流程，達成「一鍵同步與建庫」。

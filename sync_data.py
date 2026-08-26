@@ -21,7 +21,7 @@ from src.ipeecs_bot.core.logger import logger
 from src.ipeecs_bot.llm_api import get_embedding_provider
 from src.ipeecs_bot.rag.parser import DocumentParser
 from src.ipeecs_bot.rag.vector_store import VectorStore
-from src.ipeecs_bot.services.crawler import DataCrawler
+from src.ipeecs_bot.services.crawler_main import DataCrawler
 
 
 def run_sync(

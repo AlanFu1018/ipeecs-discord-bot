@@ -1,5 +1,5 @@
 """Services module for crawler, session and chat."""
-from .crawler import DataCrawler
+from .crawler_main import DataCrawler
 from .session import SessionManager, UserSession, ChatMessage
 from .chat_service import ChatService
 
