@@ -130,7 +130,7 @@ rag:
   collection_name: "ipeecs_knowledge_base"
 
 paths:
-  urls_file: "config/urls.txt"
+  urls_file: "config/urls.yaml"
   raw_dir: "res/data/raw"
   markdown_dir: "res/data/markdown"
   chroma_db_dir: "res/data/chroma_db"
@@ -150,7 +150,7 @@ department_info:
 當系所規章有更新、或初次部署專案時，需執行 `sync_data.py` 建立／更新向量資料庫。
 
 ### 三分區爬取與轉換架構
-資料爬蟲將 `config/urls.txt` 中的目標分為三個分區處理：
+資料爬蟲將 `config/urls.yaml` 中的目標分為三個分區處理：
 1. **網站分區（Zone 1: 網頁）**：爬取系所網頁內容並轉為 Markdown 儲存至 `res/data/markdown/`。
 2. **文字為主分區（Zone 2: 文字 PDF）**：下載中央大學學則等長文規章至 `res/data/raw/text_pdfs/`，以 `pymupdf4llm` 高速解析。
 3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～114 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs/`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。
@@ -279,7 +279,7 @@ python main.py
 
 ### Q4: 機器人回答內容與最新法規不符？
 - 可能是學校系網發布了新版本規章 PDF。
-- 請確認 `config/urls.txt` 連結是否最新，並重新執行 `python sync_data.py` 更新本地向量資料庫。
+- 請確認 `config/urls.yaml` 連結是否最新，並重新執行 `python sync_data.py` 更新本地向量資料庫。
 
 ### Q5: 收到長篇回覆時訊息是否會被截斷？
 - 不會。系統具備訊息自動拆分機制，超過 1900 字元的回覆會自動拆解為多則連續訊息發送。
@@ -288,18 +288,19 @@ python main.py
 
 ## 9. 系統維護與客製化
 
-### 調整目標爬蟲網址 (`config/urls.txt`)
-在 `config/urls.txt` 中可依三大分區加入新的系網頁面或教務規章網址，以 `//` 作為註解：
-```text
-// 網站
-系所簡介: https://www.ipeecs.ncu.edu.tw/introduction.html
-最新消息: https://www.ipeecs.ncu.edu.tw/news.html
+### 調整目標爬蟲網址 (`config/urls.yaml`)
+在 `config/urls.yaml` 中可依三大分區加入新的系網頁面或教務規章網址：
+```yaml
+web:
+  - ["系所首頁", "https://www.ipeecs.ncu.edu.tw/"]
+  - ["最新消息", "https://www.ipeecs.ncu.edu.tw/latest-post/"]
 
-// 文字為主的 pdf
-國立中央大學學則: https://pdc.adm.ncu.edu.tw/...
+text_pdf:
+  - ["國立中央大學學則", "https://pdc.adm.ncu.edu.tw/p/412-1019-1993.php?Lang=zh-tw"]
 
-// 大量表格為主的 pdf
-歷年教務章則目錄: https://pdc.adm.ncu.edu.tw/rule/
+table_pdf:
+  - ["必修及專業科目畢業條件", "https://pdc.adm.ncu.edu.tw/p/412-1019-2070.php?Lang=zh-tw"]
+  - ["「創意與創業」學分學程", "https://course.ncu.edu.tw/p/412-1014-2059.php?Lang=zh-tw"]
 ```
 
 ### 增加手動 Markdown 文件

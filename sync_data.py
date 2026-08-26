@@ -64,7 +64,7 @@ def run_sync(
     )
 
     if not chunks:
-        logger.warning("No document chunks were extracted. Please check raw files or urls.txt.")
+        logger.warning("No document chunks were extracted. Please check raw files or urls.yaml.")
         return
 
     logger.info(f"Generated {len(chunks)} total text chunks.")

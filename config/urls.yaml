@@ -1,0 +1,24 @@
+web:
+  #資電學士班官網
+  - ["資電學士班官網首頁","https://www.ipeecs.ncu.edu.tw/"]
+  - ["學士班簡介","https://www.ipeecs.ncu.edu.tw/basic-info/intro/intro/"]
+  - ["最新公告","https://www.ipeecs.ncu.edu.tw/latest-post/"]
+  - ["招生公告","https://www.ipeecs.ncu.edu.tw/category/news/recruit/"]
+  - ["學士班辦公室位置","https://www.ipeecs.ncu.edu.tw/basic-info/intro/location/"]
+  - ["學士班辦公室同仁","https://www.ipeecs.ncu.edu.tw/basic-info/intro/members/"]
+  - ["班務委員名單","https://www.ipeecs.ncu.edu.tw/basic-info/intro/committee/"]
+  #中央大學官網
+  - ["辦學願景","https://www.ncu.edu.tw/p/412-1000-106.php?Lang=zh-tw"]
+  - ["國立中央大學校園簡介","https://www.ncu.edu.tw/p/412-1000-96.php?Lang=zh-tw"]
+  - ["校史沿革", "https://www.ncu.edu.tw/p/412-1000-97.php?Lang=zh-tw"]
+  - ["交通方式-大眾運輸","https://www.ncu.edu.tw/p/412-1000-330.php?Lang=zh-tw"]
+  - ["中央大學-聯絡我們","https://www.ncu.edu.tw/p/412-1000-321.php?Lang=zh-tw"]
+
+text_pdf:
+  - ["國立中央大學學則", "https://pdc.adm.ncu.edu.tw/p/412-1019-1993.php?Lang=zh-tw"] #title="國立中央大學學則（PDF，另開新視窗）"
+  - ["資工系會議室教室教學實驗室管理細則","https://www.csie.ncu.edu.tw/downloads"] #title="點此下載：資工系會議室教室教學實驗室管理細則.docx"
+
+
+table_pdf:
+  - ["必修及專業科目畢業條件", "https://pdc.adm.ncu.edu.tw/p/412-1019-2070.php?Lang=zh-tw"] #11X教務章則彙編 >> 國立中央大學各學士班應修科目及畢業條件目次表 >> 資訊電機學院學士班
+  - ["創意創業學分學程", "https://course.ncu.edu.tw/p/412-1014-2059.php?Lang=zh-tw"] #「創意與創業」學分學程 >> 選修辦法

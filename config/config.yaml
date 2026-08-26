@@ -24,7 +24,7 @@ rag:
   collection_name: "ipeecs_knowledge_base"
 
 paths:
-  urls_file: "config/urls.txt"
+  urls_file: "config/urls.yaml"
   raw_dir: "res/data/raw"
   markdown_dir: "res/data/markdown"
   chroma_db_dir: "res/data/chroma_db"

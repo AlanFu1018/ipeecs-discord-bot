@@ -1,5 +1,7 @@
-"""Document parser and text chunker for Markdown and PDF files using pymupdf4llm."""
+"""Document parser and text chunker for Markdown, PDF, and DOCX files."""
 import re
+import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
@@ -16,7 +18,7 @@ class DocumentChunk:
 
 
 class DocumentParser:
-    """Parses Markdown and text PDF documents into chunked documents."""
+    """Parses Markdown, PDF, and DOCX documents into chunked documents."""
 
     def __init__(self, chunk_size: int = 600, chunk_overlap: int = 100, chunk_mini: int = 100):
         self.chunk_size = chunk_size
@@ -34,22 +36,22 @@ class DocumentParser:
         text = re.sub(r"\n\s*\n+", "\n\n", text)
         return text.strip()
 
-    def chunk_text(self, text: str, metadata: Dict[str, Any])-> List[DocumentChunk]:
+    def chunk_text(self, text: str, metadata: Dict[str, Any]) -> List[DocumentChunk]:
         """Splits a single text into overlapping chunks."""
         text = self.clean_text(text)
         if not text:
             return []
 
-        #Divide all text and tables
+        # Divide all text and tables
         text_length = len(text)
         slices: List[str] = []
         checker_start = 0
         checker_end = 0
-        if '|' not in text: # If there's ain't any table, no need of slicing
+        if '|' not in text:  # If there's ain't any table, no need of slicing
             checker_end = text_length
         while checker_end < text_length:
             if text[checker_end] == '|':
-                checker_end = text.rfind('#', checker_start,checker_end) + 1
+                checker_end = text.rfind('#', checker_start, checker_end) + 1
                 if text[checker_start:checker_end]:
                     slices.append(text[checker_start:checker_end])
                 checker_start = checker_end
@@ -64,7 +66,7 @@ class DocumentParser:
         if text[checker_start:text_length]:
             slices.append(text[checker_start:text_length])
 
-        #Dealing with categorized dic containing text and table
+        # Dealing with categorized dic containing text and table
         chunk_index = 0
         chunks: List[DocumentChunk] = []
         for sli in slices:
@@ -89,7 +91,6 @@ class DocumentParser:
                         cut = max(
                             sub.rfind("\n"),
                             sub.rfind("。"),
-                            sub.rfind("；"),
                             sub.rfind("！"),
                             sub.rfind("？"),
                             sub.rfind(". "),
@@ -98,7 +99,7 @@ class DocumentParser:
                             end = start + cut + 1
                         chunk_str = sli[start:end]
 
-                    if len(chunk_str) > self.chunk_mini: # Ignore tiny noisy chunks
+                    if len(chunk_str) > self.chunk_mini:  # Ignore tiny noisy chunks
                         meta = dict(metadata)
                         chunk_str = '#' + meta["title"] + '\n' + chunk_str
                         chunk_str = chunk_str.strip()
@@ -150,8 +151,52 @@ class DocumentParser:
             logger.error(f"Failed to parse PDF {file_path} with pymupdf4llm: {e}", exc_info=True)
             return []
 
+    def parse_docx_file(self, file_path: Path) -> List[DocumentChunk]:
+        """Parses a DOCX file and returns chunks."""
+        try:
+            ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            with zipfile.ZipFile(file_path) as z:
+                xml_content = z.read("word/document.xml")
+
+            root = ET.fromstring(xml_content)
+            body = root.find("w:body", ns)
+            if body is None:
+                body = root
+
+            lines: List[str] = []
+            for child in body:
+                tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                if tag == "p":
+                    text_parts = [node.text for node in child.findall(".//w:t", ns) if node.text]
+                    para_text = "".join(text_parts).strip()
+                    if para_text:
+                        lines.append(para_text)
+                elif tag == "tbl":
+                    for tr in child.findall("w:tr", ns):
+                        cells = []
+                        for tc in tr.findall("w:tc", ns):
+                            cell_text = "".join(node.text for node in tc.findall(".//w:t", ns) if node.text).strip()
+                            cells.append(cell_text)
+                        if cells:
+                            lines.append(" | ".join(cells))
+
+            content = "\n\n".join(lines)
+            title = file_path.stem
+            metadata = {
+                "source": file_path.name,
+                "file_path": str(file_path),
+                "title": title,
+                "doc_type": "docx",
+            }
+            chunks = self.chunk_text(content, metadata)
+            logger.info(f"Parsed DOCX: {file_path.name} -> {len(chunks)} chunks")
+            return chunks
+        except Exception as e:
+            logger.error(f"Failed to parse DOCX {file_path}: {e}", exc_info=True)
+            return []
+
     def parse_directory(self, raw_dir: Path, markdown_dir: Path) -> List[DocumentChunk]:
-        """Parses all Markdown files and text-dominant PDF files."""
+        """Parses all Markdown files, text-dominant PDF files, and DOCX files."""
         all_chunks: List[DocumentChunk] = []
 
         # 1. Parse all Markdown files (scraped web pages + Gemini-converted table PDFs)
@@ -159,15 +204,16 @@ class DocumentParser:
             for md_file in sorted(markdown_dir.glob("*.md")):
                 all_chunks.extend(self.parse_markdown_file(md_file))
 
-        # 2. Parse text-dominant PDF files (e.g. 國立中央大學學則)
+        # 2. Parse text-dominant PDF and DOCX files (e.g. 國立中央大學學則, 資工系會議室教室教學實驗室管理細則)
         text_pdf_dir = raw_dir / "text_pdfs"
-        if text_pdf_dir.exists() and list(text_pdf_dir.glob("*.pdf")):
-            for pdf_file in sorted(text_pdf_dir.glob("*.pdf")):
-                all_chunks.extend(self.parse_pdf_file(pdf_file))
-        elif raw_dir.exists():
-            # Fallback: only if text_pdfs subfolder not used
-            for pdf_file in sorted(raw_dir.glob("*.pdf")):
-                all_chunks.extend(self.parse_pdf_file(pdf_file))
+        search_dirs = [text_pdf_dir] if (text_pdf_dir.exists() and (list(text_pdf_dir.glob("*.pdf")) or list(text_pdf_dir.glob("*.docx")))) else [raw_dir]
+
+        for s_dir in search_dirs:
+            if s_dir.exists():
+                for pdf_file in sorted(s_dir.glob("*.pdf")):
+                    all_chunks.extend(self.parse_pdf_file(pdf_file))
+                for docx_file in sorted(s_dir.glob("*.docx")):
+                    all_chunks.extend(self.parse_docx_file(docx_file))
 
         logger.info(f"Total chunks extracted across all sources: {len(all_chunks)}")
         return all_chunks

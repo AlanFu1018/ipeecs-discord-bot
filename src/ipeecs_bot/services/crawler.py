@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote, urljoin, urlparse
 import requests
 import urllib3
+import yaml
 from bs4 import BeautifulSoup
 from google import genai
 from google.genai import types
@@ -18,7 +19,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class DataCrawler:
-    """Crawls department web pages to Markdown, downloads PDFs, and converts table PDFs with Gemini."""
+    """Crawls department web pages to Markdown, downloads PDFs/DOCX, and converts table PDFs with Gemini."""
 
     def __init__(
         self,
@@ -86,25 +87,29 @@ class DataCrawler:
         return content
 
     def download_pdf(self, pdf_url: str, save_name: str, target_dir: Optional[Path] = None) -> Optional[Path]:
-        """Downloads a PDF file and saves it with a sanitized filename into the target directory."""
+        """Downloads a PDF or DOCX file and saves it with a sanitized filename into the target directory."""
         dest_dir = target_dir if target_dir else self.raw_dir
         dest_dir.mkdir(parents=True, exist_ok=True)
         try:
             resp = requests.get(pdf_url, headers=self.headers, timeout=30, verify=False)
             if resp.status_code == 200 and len(resp.content) > 0:
                 clean_name = re.sub(r'[\\/*?:"<>|]', "_", save_name).strip()
-                if not clean_name.lower().endswith(".pdf"):
-                    clean_name += ".pdf"
+                if not (clean_name.lower().endswith(".pdf") or clean_name.lower().endswith(".docx")):
+                    content_type = resp.headers.get("Content-Type", "").lower()
+                    if "word" in content_type or "docx" in content_type or "docx" in pdf_url.lower():
+                        clean_name += ".docx"
+                    else:
+                        clean_name += ".pdf"
 
-                pdf_path = dest_dir / clean_name
-                with open(pdf_path, "wb") as f:
+                file_path = dest_dir / clean_name
+                with open(file_path, "wb") as f:
                     f.write(resp.content)
-                logger.info(f"Downloaded PDF: {clean_name} ({len(resp.content):,} bytes) -> {dest_dir.name}/")
-                return pdf_path
+                logger.info(f"Downloaded file: {clean_name} ({len(resp.content):,} bytes) -> {dest_dir.name}/")
+                return file_path
             else:
-                logger.warning(f"Failed to download PDF (status {resp.status_code}): {pdf_url}")
+                logger.warning(f"Failed to download file (status {resp.status_code}): {pdf_url}")
         except Exception as e:
-            logger.error(f"Error downloading PDF {pdf_url}: {e}")
+            logger.error(f"Error downloading file {pdf_url}: {e}")
         return None
 
     def crawl_markdown_page(self, title: str, url: str) -> Optional[Path]:
@@ -169,6 +174,50 @@ class DataCrawler:
 
         except Exception as e:
             logger.error(f"Error crawling Academic Rules PDF: {e}", exc_info=True)
+
+        return downloaded
+
+    def crawl_csie_downloads(self, base_url: str, target_name: str = "資工系會議室教室教學實驗室管理細則") -> List[Path]:
+        """Crawls CSIE downloads page (e.g. csie.ncu.edu.tw/downloads) and downloads target documents (DOCX/PDF)."""
+        logger.info(f"Crawling CSIE downloads from: {base_url} for target: {target_name}")
+        downloaded: List[Path] = []
+        try:
+            resp = self.fetch_url(base_url)
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            found_link = None
+            save_filename = target_name
+
+            for a in soup.find_all("a"):
+                title_attr = a.get("title", "")
+                text_content = a.get_text(strip=True)
+                combined = f"{text_content} {title_attr}"
+
+                # Match keywords in link or title
+                if ("管理細則" in combined or "會議室" in combined or target_name in combined) and ("file" in a.get("href", "").lower() or "downloads" in base_url.lower()):
+                    found_link = a
+                    if ".docx" in combined or "docx" in combined.lower():
+                        save_filename = target_name if target_name.endswith(".docx") else f"{target_name}.docx"
+                    elif ".pdf" in combined or "pdf" in combined.lower():
+                        save_filename = target_name if target_name.endswith(".pdf") else f"{target_name}.pdf"
+                    break
+
+            if found_link:
+                href = found_link.get("href", "")
+                if href and not href.startswith("javascript"):
+                    file_url = urljoin(base_url, href)
+                    saved = self.download_pdf(
+                        file_url,
+                        save_filename,
+                        target_dir=self.text_pdf_dir,
+                    )
+                    if saved:
+                        downloaded.append(saved)
+            else:
+                logger.warning(f"Could not locate '{target_name}' download link on page: {base_url}")
+
+        except Exception as e:
+            logger.error(f"Error crawling CSIE downloads {base_url}: {e}", exc_info=True)
 
         return downloaded
 
@@ -401,7 +450,7 @@ class DataCrawler:
         return converted_mds
 
     def parse_urls_file(self, urls_file: Path) -> Dict[str, List[Tuple[str, str]]]:
-        """Parses urls.txt into 3 sections: web, text_pdf, table_pdf."""
+        """Parses urls.yaml (or legacy urls.txt) into 3 sections: web, text_pdf, table_pdf."""
         sections: Dict[str, List[Tuple[str, str]]] = {
             "web": [],
             "text_pdf": [],
@@ -412,41 +461,81 @@ class DataCrawler:
             logger.warning(f"URLs file not found: {urls_file}")
             return sections
 
-        with open(urls_file, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+        # Try YAML parsing first if extension is yaml/yml or regardless
+        if urls_file.suffix.lower() in [".yaml", ".yml"]:
+            try:
+                with open(urls_file, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f)
 
-        current_section = "web"
+                if isinstance(data, dict):
+                    for sec in ["web", "text_pdf", "table_pdf"]:
+                        items = data.get(sec, [])
+                        if not isinstance(items, list):
+                            continue
+                        for item in items:
+                            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                                sections[sec].append((str(item[0]).strip(), str(item[1]).strip()))
+                            elif isinstance(item, (list, tuple)) and len(item) == 1:
+                                u = str(item[0]).strip()
+                                sections[sec].append((u, u))
+                            elif isinstance(item, dict):
+                                if "title" in item and "url" in item:
+                                    sections[sec].append((str(item["title"]).strip(), str(item["url"]).strip()))
+                                else:
+                                    for k, v in item.items():
+                                        sections[sec].append((str(k).strip(), str(v).strip()))
+                            elif isinstance(item, str):
+                                line = item.strip()
+                                if "http://" in line or "https://" in line:
+                                    if ":" in line and not line.startswith("http"):
+                                        parts = line.split("http", 1)
+                                        t = parts[0].strip().rstrip(":").strip()
+                                        u = "http" + parts[1].strip()
+                                    else:
+                                        t = line
+                                        u = line
+                                    sections[sec].append((t, u))
+                    return sections
+            except Exception as e:
+                logger.error(f"Error parsing YAML URLs file {urls_file}: {e}", exc_info=True)
 
-        for raw_line in lines:
-            line = raw_line.strip()
-            if not line:
-                continue
+        # Fallback to line-by-line parsing (for .txt files)
+        try:
+            with open(urls_file, "r", encoding="utf-8") as f:
+                lines = f.readlines()
 
-            # Identify section transitions
-            lower_line = line.lower()
-            if "//網站" in lower_line or "// 網站" in lower_line:
-                current_section = "web"
-                continue
-            elif "文字為主" in lower_line:
-                current_section = "text_pdf"
-                continue
-            elif "大量表格" in lower_line or "表格為主" in lower_line:
-                current_section = "table_pdf"
-                continue
+            current_section = "web"
+            for raw_line in lines:
+                line = raw_line.strip()
+                if not line:
+                    continue
 
-            if line.startswith("//") or line.startswith("#"):
-                continue
+                lower_line = line.lower()
+                if "//網站" in lower_line or "// 網站" in lower_line:
+                    current_section = "web"
+                    continue
+                elif "文字為主" in lower_line:
+                    current_section = "text_pdf"
+                    continue
+                elif "大量表格" in lower_line or "表格為主" in lower_line:
+                    current_section = "table_pdf"
+                    continue
 
-            if "http://" in line or "https://" in line:
-                if ":" in line and not line.startswith("http"):
-                    parts = line.split("http", 1)
-                    title = parts[0].strip().rstrip(":").strip()
-                    url = "http" + parts[1].strip()
-                else:
-                    url = line.strip()
-                    title = url
+                if line.startswith("//") or line.startswith("#"):
+                    continue
 
-                sections[current_section].append((title, url))
+                if "http://" in line or "https://" in line:
+                    if ":" in line and not line.startswith("http"):
+                        parts = line.split("http", 1)
+                        title = parts[0].strip().rstrip(":").strip()
+                        url = "http" + parts[1].strip()
+                    else:
+                        url = line.strip()
+                        title = url
+
+                    sections[current_section].append((title, url))
+        except Exception as e:
+            logger.error(f"Error reading URLs file {urls_file}: {e}", exc_info=True)
 
         return sections
 
@@ -456,7 +545,7 @@ class DataCrawler:
         skip_llm_convert: bool = False,
         skip_converted: bool = False,
     ) -> Dict[str, Any]:
-        """Executes full 3-zone crawl based on urls.txt."""
+        """Executes full 3-zone crawl based on urls.yaml."""
         logger.info(f"Parsing URLs config from: {urls_file}")
         targets = self.parse_urls_file(urls_file)
 
@@ -474,18 +563,21 @@ class DataCrawler:
             if md_path:
                 results["markdown_files"].append(md_path)
 
-        # Zone 2: Crawl Text-Dominant PDFs
-        logger.info(f"--- [Zone 2] Crawling {len(targets['text_pdf'])} Text-Dominant PDF Sources ---")
+        # Zone 2: Crawl Text-Dominant PDFs and Documents
+        logger.info(f"--- [Zone 2] Crawling {len(targets['text_pdf'])} Text-Dominant PDF/Doc Sources ---")
         for title, url in targets["text_pdf"]:
             if "pdc.adm.ncu.edu.tw" in url and ("1993" in url or "學則" in title):
                 pdfs = self.crawl_academic_rules_pdf(url)
                 results["text_pdf_files"].extend(pdfs)
-            elif url.lower().endswith(".pdf"):
+            elif "csie.ncu.edu.tw" in url and ("downloads" in url or "管理細則" in title):
+                files = self.crawl_csie_downloads(url, title)
+                results["text_pdf_files"].extend(files)
+            elif url.lower().endswith(".pdf") or url.lower().endswith(".docx"):
                 saved = self.download_pdf(url, title, target_dir=self.text_pdf_dir)
                 if saved:
                     results["text_pdf_files"].append(saved)
             else:
-                # Generic fallback for text PDF page
+                # Generic fallback for text PDF / doc page
                 pdfs = self.crawl_academic_rules_pdf(url)
                 results["text_pdf_files"].extend(pdfs)
 
@@ -514,7 +606,7 @@ class DataCrawler:
         logger.info(
             f"=== Crawl & Conversion Finished ===\n"
             f"  - Web Markdowns: {len(results['markdown_files'])}\n"
-            f"  - Text PDFs: {len(results['text_pdf_files'])}\n"
+            f"  - Text PDFs & Docs: {len(results['text_pdf_files'])}\n"
             f"  - Table PDFs Downloaded: {len(results['table_pdf_files'])}\n"
             f"  - Table PDFs Converted to Markdown: {len(results['converted_table_markdowns'])}\n"
         )

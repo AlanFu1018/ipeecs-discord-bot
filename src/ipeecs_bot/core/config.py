@@ -59,7 +59,7 @@ class Settings:
 
         # Paths
         paths_cfg = self._raw_config.get("paths", {})
-        self.urls_file = self.base_dir / paths_cfg.get("urls_file", "config/urls.txt")
+        self.urls_file = self.base_dir / paths_cfg.get("urls_file", "config/urls.yaml")
         self.raw_dir = self.base_dir / paths_cfg.get("raw_dir", "res/data/raw")
         self.markdown_dir = self.base_dir / paths_cfg.get("markdown_dir", "res/data/markdown")
         self.chroma_db_dir = self.base_dir / paths_cfg.get("chroma_db_dir", "res/data/chroma_db")

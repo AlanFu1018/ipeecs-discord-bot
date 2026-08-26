@@ -100,7 +100,7 @@ rag:
   collection_name: "ipeecs_knowledge_base"
 
 paths:
-  urls_file: "config/urls.txt"
+  urls_file: "config/urls.yaml"
   raw_dir: "res/data/raw"
   markdown_dir: "res/data/markdown"
   chroma_db_dir: "res/data/chroma_db"
@@ -120,7 +120,7 @@ department_info:
 當系所規章有更新、或初次部署專案時，需執行 `sync_data.py` 建立／更新向量資料庫，並重啟機器人。
 
 ### 三分區爬取與轉換架構
-資料爬蟲將 `config/urls.txt` 中的目標分為三個分區處理：
+資料爬蟲將 `config/urls.yaml` 中的目標分為三個分區處理：
 1. **網站分區（Zone 1: 網頁）**：爬取系所網頁內容並轉為 Markdown 儲存至 `res/data/markdown`。可以直接將新連結加入，會自動爬取該網站。
 2. **文字為主分區（Zone 2: 文字 PDF）**：下載中央大學學則等長文規章至 `res/data/raw/text_pdfs`，以 `pymupdf4llm` 高速解析。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
 3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～114 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
