@@ -118,8 +118,9 @@ class TableCrawlerMixin:
                             if not href3 or href3.startswith("javascript"):
                                 continue
 
+                            combined_item_norm = re.sub(r"\s+", "", combined_item)
                             for kw in target_keywords:
-                                if kw in combined_item:
+                                if kw in combined_item_norm:
                                     pdf_url = urljoin(mulu_url, href3)
 
                                     # Build a clear descriptive filename
