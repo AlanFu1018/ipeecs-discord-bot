@@ -62,11 +62,13 @@ class Settings:
         self.urls_file = self.base_dir / paths_cfg.get("urls_file", "config/urls.yaml")
         self.raw_dir = self.base_dir / paths_cfg.get("raw_dir", "res/data/raw")
         self.markdown_dir = self.base_dir / paths_cfg.get("markdown_dir", "res/data/markdown")
+        self.fixed_markdown_dir = self.base_dir / paths_cfg.get("fixed_markdown_dir", "res/data/fixed/markdown")
         self.chroma_db_dir = self.base_dir / paths_cfg.get("chroma_db_dir", "res/data/chroma_db")
 
         # Ensure directories exist
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.markdown_dir.mkdir(parents=True, exist_ok=True)
+        self.fixed_markdown_dir.mkdir(parents=True, exist_ok=True)
         self.chroma_db_dir.mkdir(parents=True, exist_ok=True)
 
         # Department contact info fallback

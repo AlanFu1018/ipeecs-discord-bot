@@ -25,17 +25,25 @@ from src.ipeecs_bot.services.crawler_main import DataCrawler
 
 
 def run_sync(
+    zone: str = "all",
     skip_crawl: bool = False,
     skip_llm_convert: bool = False,
     skip_converted: bool = False,
     reset_db: bool = True,
 ):
-    """Executes the data synchronization workflow."""
+    """Executes the data synchronization workflow.
+
+    zone: "all" processes both the crawled ("data") and manually curated ("fixed")
+    document sets; "data" or "fixed" processes only that one, leaving the other
+    zone's existing vectors untouched.
+    """
     settings = get_settings()
-    logger.info("=== Starting IPEECS Bot Knowledge Base Sync ===")
+    logger.info(f"=== Starting IPEECS Bot Knowledge Base Sync (zone={zone}) ===")
 
     # Step 1: Web Crawling, PDF Downloading & Table Conversion via Gemini
-    if not skip_crawl:
+    if zone == "fixed":
+        logger.info("[Step 1/3] Skipping crawl (zone=fixed never touches crawled data).")
+    elif not skip_crawl:
         logger.info("[Step 1/3] Crawling Department URLs, downloading PDFs & converting tables with Gemini...")
         crawler = DataCrawler(
             raw_dir=settings.raw_dir,
@@ -58,13 +66,23 @@ def run_sync(
         chunk_overlap=settings.chunk_overlap,
         chunk_mini=settings.chunk_mini
     )
-    chunks = parser.parse_directory(
-        raw_dir=settings.raw_dir,
-        markdown_dir=settings.markdown_dir,
-    )
+    chunks = []
+    if zone in ("all", "data"):
+        data_chunks = parser.parse_directory(
+            raw_dir=settings.raw_dir,
+            markdown_dir=settings.markdown_dir,
+        )
+        for chunk in data_chunks:
+            chunk.metadata["zone"] = "data"
+        chunks.extend(data_chunks)
+    if zone in ("all", "fixed"):
+        fixed_chunks = parser.parse_markdown_dir(settings.fixed_markdown_dir)
+        for chunk in fixed_chunks:
+            chunk.metadata["zone"] = "fixed"
+        chunks.extend(fixed_chunks)
 
     if not chunks:
-        logger.warning("No document chunks were extracted. Please check raw files or urls.yaml.")
+        logger.warning("No document chunks were extracted. Please check raw files, urls.yaml, or res/data/fixed/markdown.")
         return
 
     logger.info(f"Generated {len(chunks)} total text chunks.")
@@ -79,8 +97,12 @@ def run_sync(
     )
 
     if reset_db:
-        logger.info("Clearing existing vector collection...")
-        vector_store.reset_collection()
+        if zone == "all":
+            logger.info("Clearing existing vector collection...")
+            vector_store.reset_collection()
+        else:
+            logger.info(f"Clearing existing vectors for zone '{zone}'...")
+            vector_store.reset_zone(zone)
 
     total_added = vector_store.add_chunks_sync(chunks)
     logger.info(f"=== Knowledge Base Sync Completed! Total Chunks: {total_added} ===")
@@ -88,6 +110,16 @@ def run_sync(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Synchronize IPEECS knowledge base data.")
+    parser.add_argument(
+        "--zone",
+        choices=["all", "data", "fixed"],
+        default="all",
+        help=(
+            "Which document set to (re)index: 'data' is the crawled/auto-refreshed set, "
+            "'fixed' is the manually curated set in res/data/fixed/markdown, "
+            "'all' (default) processes both."
+        ),
+    )
     parser.add_argument(
         "--skip-crawl",
         action="store_true",
@@ -111,6 +143,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_sync(
+        zone=args.zone,
         skip_crawl=args.skip_crawl,
         skip_llm_convert=args.skip_llm_convert,
         skip_converted=args.skip_converted,

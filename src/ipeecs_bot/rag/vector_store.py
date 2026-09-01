@@ -51,6 +51,14 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Error resetting collection: {e}")
 
+    def reset_zone(self, zone: str) -> None:
+        """Clears only the documents tagged with the given metadata zone (e.g. 'data' or 'fixed')."""
+        try:
+            self.collection.delete(where={"zone": zone})
+            logger.info(f"Reset zone '{zone}' in collection: {self.collection_name}")
+        except Exception as e:
+            logger.error(f"Error resetting zone '{zone}': {e}")
+
     def add_chunks_sync(self, chunks: List[DocumentChunk]) -> int:
         """Generates embeddings and stores document chunks synchronously."""
         if not chunks:
@@ -59,7 +67,7 @@ class VectorStore:
 
         logger.info(f"Generating embeddings for {len(chunks)} chunks...")
         texts = [chunk.content for chunk in chunks]
-        ids = [f"chunk_{idx}" for idx in range(len(chunks))]
+        ids = [f"{chunk.metadata.get('zone', 'data')}_{idx}" for idx, chunk in enumerate(chunks)]
         metadatas = [chunk.metadata for chunk in chunks]
 
         # embed_documents_sync batches internally and respects rate pacing
@@ -87,7 +95,7 @@ class VectorStore:
 
         logger.info(f"Asynchronously generating embeddings for {len(chunks)} chunks...")
         texts = [chunk.content for chunk in chunks]
-        ids = [f"chunk_{idx}" for idx in range(len(chunks))]
+        ids = [f"{chunk.metadata.get('zone', 'data')}_{idx}" for idx, chunk in enumerate(chunks)]
         metadatas = [chunk.metadata for chunk in chunks]
 
         embeddings = await self.embedding_provider.embed_documents(texts)

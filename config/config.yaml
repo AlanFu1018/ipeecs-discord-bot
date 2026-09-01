@@ -27,6 +27,7 @@ paths:
   urls_file: "config/urls.yaml"
   raw_dir: "res/data/raw"
   markdown_dir: "res/data/markdown"
+  fixed_markdown_dir: "res/data/fixed/markdown"
   chroma_db_dir: "res/data/chroma_db"
 
 department_info:

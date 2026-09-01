@@ -195,14 +195,18 @@ class DocumentParser:
             logger.error(f"Failed to parse DOCX {file_path}: {e}", exc_info=True)
             return []
 
-    def parse_directory(self, raw_dir: Path, markdown_dir: Path) -> List[DocumentChunk]:
-        """Parses all Markdown files, text-dominant PDF files, and DOCX files."""
-        all_chunks: List[DocumentChunk] = []
-
-        # 1. Parse all Markdown files (scraped web pages + Gemini-converted table PDFs)
+    def parse_markdown_dir(self, markdown_dir: Path) -> List[DocumentChunk]:
+        """Parses every Markdown file directly under markdown_dir (non-recursive)."""
+        chunks: List[DocumentChunk] = []
         if markdown_dir.exists():
             for md_file in sorted(markdown_dir.glob("*.md")):
-                all_chunks.extend(self.parse_markdown_file(md_file))
+                chunks.extend(self.parse_markdown_file(md_file))
+        return chunks
+
+    def parse_directory(self, raw_dir: Path, markdown_dir: Path) -> List[DocumentChunk]:
+        """Parses all Markdown files, text-dominant PDF files, and DOCX files."""
+        # 1. Parse all Markdown files (scraped web pages + Gemini-converted table PDFs)
+        all_chunks: List[DocumentChunk] = self.parse_markdown_dir(markdown_dir)
 
         # 2. Parse text-dominant PDF and DOCX files (e.g. 國立中央大學學則, 資工系會議室教室教學實驗室管理細則)
         text_pdf_dir = raw_dir / "text_pdfs"

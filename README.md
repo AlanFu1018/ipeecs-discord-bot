@@ -103,6 +103,7 @@ paths:
   urls_file: "config/urls.yaml"
   raw_dir: "res/data/raw"
   markdown_dir: "res/data/markdown"
+  fixed_markdown_dir: "res/data/fixed/markdown"
   chroma_db_dir: "res/data/chroma_db"
 
 department_info:
@@ -123,10 +124,16 @@ department_info:
 資料爬蟲將 `config/urls.yaml` 中的目標分為三個分區處理：
 1. **網站分區（Zone 1: 網頁）**：爬取系所網頁內容並轉為 Markdown 儲存至 `res/data/markdown`。可以直接將新連結加入，會自動爬取該網站。
 2. **文字為主分區（Zone 2: 文字 PDF）**：下載中央大學學則等長文規章至 `res/data/raw/text_pdfs`，以 `pymupdf4llm` 高速解析。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
-3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～114 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
+3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～115 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
+
+以上三個分區皆由爬蟲自動維護，內容會隨每次執行而被覆蓋更新，屬於**「資料區」（`data` zone）**。
+
+### 固定資料區（Fixed Zone）
+
+除了爬蟲自動更新的資料外，系統另外提供一個**不受爬蟲影響、需要手動維護**的固定資料區，存放於 `res/data/fixed/markdown`。適合放置人工整理、校對過、且不希望被重新爬取覆蓋的內容（例如手寫 FAQ、經過人工修正的規章摘要）。此區的檔案只需是整理好的 `.md`，同步時系統會直接解析，不會經過爬蟲或 Gemini 表格轉換。
 
 ```bash
-# 完整同步：爬取系網頁面、下載最新規章 PDF、表格轉換並寫入向量庫
+# 完整同步：爬取系網頁面、下載最新規章 PDF、表格轉換，並將「資料區」與「固定資料區」一併寫入向量庫
 python sync_data.py
 ```
 
@@ -134,11 +141,12 @@ python sync_data.py
 
 | 參數 | 說明 | 適用情境 |
 | :--- | :--- | :--- |
-| *(無參數)* | 執行完整爬蟲 + Gemini 表格轉 Markdown + 解析分塊 + 清除舊庫並重新建立索引。 | 定期規章大改版或初次建庫。 |
+| *(無參數)* | 執行完整爬蟲 + Gemini 表格轉 Markdown + 解析分塊 + 清除舊庫並重新建立索引（資料區＋固定資料區皆處理）。 | 定期規章大改版或初次建庫。 |
+| `--zone {all,data,fixed}` | 指定只處理**資料區**（`data`，爬蟲維護）或**固定資料區**（`fixed`，`res/data/fixed/markdown`），或兩者皆處理（`all`，預設）。選擇 `fixed` 時會自動略過爬蟲步驟，且只清空、重建固定資料區的向量，不影響資料區既有內容；選擇 `data` 則相反。 | 只想更新其中一區內容，不想動到另一區既有的向量資料時。 |
 | `--skip-crawl` | **略過網路爬蟲與表格轉換**，僅重新解析本機 `res/data` 現有文件並快速重建向量索引。 | 已手動加入新 PDF 或修訂 Markdown 時。 |
 | `--skip-llm-convert` | **執行爬蟲與下載，但略過 Gemini 表格轉 Markdown**，直接沿用既有 Markdown 快取。 | 更新網頁或下載新 PDF，但不想重複消耗 LLM Token 重新轉表時。 |
 | `--skip-converted` | **跳過已轉換過的表格 PDF**，若 Markdown 目錄中已存在同名檔案則略過該 PDF 的 Gemini 轉換。 | 爬取或新增 PDF 時，僅針對尚未轉換的檔案呼叫 LLM 轉表，節省 Token 與時間。 |
-| `--no-reset` | **不清空現有資料庫**，直接將新分塊追加（Upsert）進 ChromaDB。 | 單純擴充資料，保留原有向量時。 |
+| `--no-reset` | **不清空現有資料庫**，直接將新分塊寫入 ChromaDB。 | 單純擴充資料，保留原有向量時。 |
 
 範例：
 ```bash
@@ -150,7 +158,12 @@ python sync_data.py --skip-llm-convert
 
 # 爬取並僅對尚未轉成 Markdown 的新 table_pdfs 進行 Gemini 轉換
 python sync_data.py --skip-converted
+
+# 只更新固定資料區（例如新增/修改了 res/data/fixed/markdown 底下的 FAQ），不動爬蟲抓的資料
+python sync_data.py --zone fixed
 ```
+
+> **注意**：舊資料庫中既有的向量尚未標記所屬 zone。升級後請先執行一次不帶 `--zone` 參數（即 `--zone all`）的完整同步，讓資料庫全部重建並補上 zone 標記，之後再使用 `--zone data` / `--zone fixed` 做局部更新才會正確生效。
 
 ---
 
@@ -234,10 +247,12 @@ python main.py
 ## 7. 系統維護與客製化
 
 ### 增加手動 Markdown 文件
-若有尚未製作成網頁或 PDF 的常見問答（FAQ），可直接新增 Markdown 檔案至 `res/data/markdown`（例如 `自訂常見問題集.md`），接著執行：
+若有尚未製作成網頁或 PDF 的常見問答（FAQ），或是需要人工校對、不希望被下次爬蟲覆蓋的內容，請新增 Markdown 檔案至**固定資料區** `res/data/fixed/markdown`（例如 `自訂常見問題集.md`），接著執行：
 ```bash
-python sync_data.py --skip-crawl
+python sync_data.py --zone fixed
 ```
-即可立即將自訂 QA 整合至機器人的知識庫中。
+即可立即將自訂 QA 整合至機器人的知識庫中，且不會被爬蟲自動更新的內容覆蓋，也不會動到 `data` 區既有的向量。
+
+> 注意：`res/data/markdown` 是爬蟲的輸出目錄，每次執行 `sync_data.py`（未加 `--skip-crawl`）都可能被覆蓋或新增檔案，不適合放置需要長期保留的手動內容。
 
 ---
