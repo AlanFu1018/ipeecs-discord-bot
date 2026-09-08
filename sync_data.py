@@ -104,7 +104,12 @@ def run_sync(
             logger.info(f"Clearing existing vectors for zone '{zone}'...")
             vector_store.reset_zone(zone)
 
-    total_added = vector_store.add_chunks_sync(chunks)
+    try:
+        total_added = vector_store.add_chunks_sync(chunks)
+    except Exception as e:
+        logger.error(f"Embedding/indexing failed for zone '{zone}' after all retries were exhausted: {e}")
+        sys.exit(1)
+
     logger.info(f"=== Knowledge Base Sync Completed! Total Chunks: {total_added} ===")
 
 
