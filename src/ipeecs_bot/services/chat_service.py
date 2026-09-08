@@ -1,5 +1,5 @@
 """Chat service integrating query rewriting, RAG retrieval, and LLM answer generation."""
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.config import Settings
 from ..core.logger import logger
@@ -48,38 +48,63 @@ class ChatService:
 
         return f"我目前在規章資料庫中查無足夠的相關資訊（問題超出規章範圍或查無記載）。\n\n{contact_text}"
 
-    async def rewrite_query(self, session: UserSession, current_query: str) -> str:
-        """Condenses multi-turn conversation into a standalone search query."""
-        if not session.messages:
-            return current_query
+    @staticmethod
+    def _parse_rewrite_response(raw: str) -> Tuple[Optional[str], Optional[str]]:
+        """Parses the 'LANGUAGE: ...' / 'QUERY: ...' lines out of the rewrite LLM response."""
+        language = None
+        query = None
+        for line in raw.strip().splitlines():
+            line = line.strip()
+            if line.upper().startswith("LANGUAGE:"):
+                language = line.split(":", 1)[1].strip() or None
+            elif line.upper().startswith("QUERY:"):
+                query = line.split(":", 1)[1].strip() or None
+        return language, query
 
+    async def rewrite_query(self, session: UserSession, current_query: str) -> Tuple[str, str]:
+        """Detects the language of the user's original input and condenses multi-turn
+        conversation into a standalone, Traditional Chinese search query (retrieval always
+        targets the Chinese-language regulation documents regardless of the question's
+        language; the detected language is used later to answer back in kind).
+
+        Runs on every turn (not only once history exists) since the language has to be
+        captured before anything gets rewritten. Returns (standalone_query, language).
+        """
         history_text = session.get_history_summary()
         prompt = (
             "【對話歷史】\n"
-            f"{history_text}\n\n"
+            f"{history_text or '（無，這是本次對話的第一則訊息）'}\n\n"
             "【使用者最新輸入】\n"
             f"{current_query}\n\n"
             "【任務】\n"
-            f"結合對話歷史，代換 /提問者的身分訊息/ : /提問者的身分訊息/ 想要詢問 {current_query} "
-            "請直接輸出改寫後的問句，不要添加任何引號、解釋或多餘說明。"
+            "1. 判斷【使用者最新輸入】使用的自然語言，輸出該語言的常用名稱（例如：繁體中文、English、日本語、한국어）。\n"
+            "2. 結合對話歷史，代換 /提問者的身分訊息/ : /提問者的身分訊息/ 想要詢問 "
+            f"{current_query}，並將結果統一改寫為一個獨立、語意完整的「繁體中文」搜尋問句"
+            "（此問句僅用於資料庫檢索，與使用者輸入的語言無關，一律輸出繁體中文）。\n\n"
+            "請務必只輸出以下兩行，不要添加引號、解釋或其他文字：\n"
+            "LANGUAGE: <偵測到的語言>\n"
+            "QUERY: <改寫後的繁體中文搜尋問句>"
         )
 
+        language, condensed = None, None
         try:
-            standalone_query = await self.llm.generate_response(
+            raw = await self.llm.generate_response(
                 prompt=prompt,
                 temperature=0.0,
-                max_output_tokens=150,
+                max_output_tokens=200,
             )
-            condensed = standalone_query.strip()
+            language, condensed = self._parse_rewrite_response(raw)
             if condensed:
-                logger.info(f"Query rewritten: '{current_query}' -> '{condensed}'")
-                return condensed
+                logger.info(f"Query rewritten: '{current_query}' -> '{condensed}' (language={language})")
         except Exception as e:
-            logger.warning(f"Query rewriting failed, using original query: {e}")
+            logger.warning(f"Query rewriting/language detection failed, using original query: {e}")
 
-        return current_query
+        detected_language = language or session.language or "繁體中文"
+        session.language = detected_language
 
-    def build_system_prompt(self, context_docs: List[Dict[str, Any]]) -> str:
+        return condensed or current_query, detected_language
+
+    def build_system_prompt(self, context_docs: List[Dict[str, Any]], language: Optional[str] = None) -> str:
         """Builds system prompt instructions for the LLM."""
         sources_context = ""
         for i, doc in enumerate(context_docs, 1):
@@ -96,8 +121,10 @@ class ChatService:
 
         return (
             f"你是國立中央大學資訊電機學院學士班（資電學士班）的專屬智能客服與修課規章顧問。\n"
-            "請以繁體中文（台灣）/ 英文 / 合適語言 為使用者提供親切、專業、精確且有依據的解答。\n\n"
-            "【回答守則】\n"
+            "你會為使用者提供親切、專業、精確且有依據的解答。\n\n"
+            f"【語言】請務必使用「{language or '與使用者提問相同'}」回答，"
+            "即使【參考規章資料】是繁體中文，也要翻譯成該語言呈現給使用者。\n\n"
+            "【回答守則】\n\n"
             "1. 【嚴格依據資料】：必須嚴格依據下方提供的【參考規章資料】進行回答，禁止編造或憑空臆測任何未記載的規定、學分數或門檻。\n"
             "2. 【主動追問與釐清細節】：若使用者的問題較為籠統或缺乏關鍵條件（例如：尚未指明**入學/適用學年度**、**專長領域**（電機工程/資訊工程/通訊工程/網路工程）、**年級**或**身分**（如轉學生/雙主修）等），導致不同情況適用不同規章時：\n"
             "   - 請先就目前已知資訊提供概括或主流說明。\n"
@@ -127,8 +154,8 @@ class ChatService:
             session.clear()
             return "✅ 已重置您的對話記憶！請問有什麼我可以協助您的系所規章或選課問題嗎？"
 
-        # Step 1: Query Condensing (Rewrite)
-        standalone_query = await self.rewrite_query(session, clean_input)
+        # Step 1: Language Detection + Query Condensing (Rewrite)
+        standalone_query, detected_language = await self.rewrite_query(session, clean_input)
 
         # Step 2: Vector Retrieval
         docs = await self.vector_store.search(
@@ -142,7 +169,7 @@ class ChatService:
         if not docs:
             response_text = self.get_fallback_message(is_error=False)
         else:
-            system_prompt = self.build_system_prompt(docs)
+            system_prompt = self.build_system_prompt(docs, language=detected_language)
             user_prompt = f"使用者問題：{clean_input}\n（改寫檢索語意：{standalone_query}）"
 
             try:

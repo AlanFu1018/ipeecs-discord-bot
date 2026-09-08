@@ -20,6 +20,8 @@ class UserSession:
     user_id: str
     messages: List[ChatMessage] = field(default_factory=list)
     last_activity: float = field(default_factory=time.time)
+    language: Optional[str] = None
+    """Most recently detected natural language of the user's questions (e.g. '繁體中文', 'English')."""
 
     def is_expired(self, timeout_seconds: float) -> bool:
         """Checks if session has timed out due to inactivity."""

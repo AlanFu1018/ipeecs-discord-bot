@@ -58,9 +58,10 @@ async def test_llm_query_rewriting_and_fallback():
     session = chat_service.session_manager.get_or_create_session("test_user_002")
     session.add_message("user", "請問資電學士班大二必修有哪些？")
     session.add_message("model", "大二必修包含資料結構、演算法等。")
-    rewritten = await chat_service.rewrite_query(session, "那大三呢？")
-    print("Rewritten query result:", rewritten)
+    rewritten, language = await chat_service.rewrite_query(session, "那大三呢？")
+    print("Rewritten query result:", rewritten, "| language:", language)
     assert len(rewritten) > 0
+    assert len(language) > 0
 
     # Test entrepreneurship course query (table retrieval test)
     answer = await chat_service.answer_message(
