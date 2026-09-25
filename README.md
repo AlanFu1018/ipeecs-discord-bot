@@ -1,6 +1,6 @@
 # 國立中央大學資電學士班智能客服機器人 — 使用手冊
 
-歡迎使用 **國立中央大學資訊電機學院學士班（IPEECS）智能客服機器人**。本手冊旨在提供使用者操作與維運指引，及常見問題排解。
+歡迎使用 **國立中央大學資訊電機學院學士班（IPEECS）智能客服機器人**。本手冊旨在提供使用者操作與維運指引，及常見問題排解。更完整的技術細節與 FAQ 請參考 [`doc/User_Guide.md`](doc/User_Guide.md)，系統規格請參考 [`doc/Discord_Bot_Spec_Updated.md`](doc/Discord_Bot_Spec_Updated.md)。
 
 ---
 
@@ -18,11 +18,14 @@
 ## 1. 系統概述與核心功能
 
 - **一對一私訊諮詢 (DM)**：所有對話皆在私訊中進行，保護學生修課隱私且不干擾公開伺服器。
-- **高精確度規章檢索**：自動爬取並索引 109～114 學年度各專長課規（資工、電機、通訊、網工）、中央大學學則、創意與創業學分學程及系網資訊，回答均標註來源。
-- **Gemini 多模態表格轉 Markdown 技術**：針對大量複雜表格的修業規章 PDF，透過 Gemini 多模態解析轉換為乾淨 Markdown 表格再分塊索引，大幅提升表格檢索精確度。
+- **高精確度規章檢索**：自動爬取並索引歷年（目前為 109～114 學年度）各專長課規（資工、電機、通訊、網工）、中央大學學則、創意與創業學分學程、最新學年度校曆、資電學士班／中央大學／計算機中心網頁資訊，並納入人工整理的固定資料（註冊流程、居留證延期、僑生保險、在學證明、學生宿舍管理辦法等），回答均標註來源。
+- **Gemini 多模態表格轉 Markdown 技術**：針對大量複雜表格的修業規章與校曆 PDF，透過 Gemini 多模態解析轉換為乾淨 Markdown 表格再分塊索引；分塊時表格整段保留、不被切斷，大幅提升表格檢索精確度。
 - **多輪對話改寫 (Query Condensing)**：具備代名詞與省略語還原能力（例如接續問「那大三呢？」、「抵免門檻是多少？」），自動改寫為獨立語意問句後進行精準向量檢索。
+- **多語言回覆**：自動偵測提問語言（如 English、日本語），以繁體中文檢索規章後，再以使用者的語言回答。
 - **主動追問與引導**：當使用者問題較為籠統（如未指明入學學年度或專長領域）時，機器人會先給予概述並親切追問細節以提供最精確答案。
+- **業務範圍把關與 Prompt Injection 防護**：撰寫程式、作業解答、翻譯、閒聊等超出系所客服範圍的請求，會在程式層直接拒答，且不寫入對話記憶。
 - **嚴謹的 Fallback 機制**：遇查無資料、超出範圍或系統異常時，嚴禁模型幻覺，並統一附上資電學士班系辦公室的聯絡資訊。
+- **API 忙碌自動重試**：Gemini 回傳 503（模型過載）時自動以指數退避重試；Embedding 遇 429 速率限制亦會自動等待重試。
 - **訊息長度自動分段**：針對超過 Discord 2000 字元上限的長回覆，自動分段循序發送，確保資訊完整不中斷。
 
 ---
@@ -64,7 +67,7 @@ pip install -r requirements.txt
 ```
 
 ### 步驟 2：設定環境變數 (`.env`)
-在專案根目錄建立或編輯 `.env` 檔案，填入相應金鑰：
+將專案根目錄的 `.env.example` 複製為 `.env`，並填入相應金鑰：
 
 ```env
 DISCORD_BOT_TOKEN="你的_DISCORD_BOT_TOKEN"
@@ -78,25 +81,26 @@ GEMINI_API_KEY="你的_GEMINI_API_KEY"
 bot:
   command_prefix: "!"
   session_timeout_minutes: 60     # 對話閒置過期時間 (分鐘)
-  max_history_turns: 5           # 記憶對話輪數上限
+  max_history_turns: 5            # 記憶對話輪數上限
 
 llm:
-  provider: "gemini"             # gemini / local
-  model: "gemini-3.1-flash-lite" # LLM 模型名稱
+  provider: "gemini"              # 目前僅實作 gemini
+  model: "gemini-3.1-flash-lite"  # LLM 模型名稱 (亦用於表格 PDF 轉 Markdown)
   temperature: 0.2
   max_output_tokens: 1500
 
 embedding:
-  provider: "gemini"             # gemini / local
-  model: "gemini-embedding-001"  # Embedding 模型名稱
+  provider: "gemini"              # gemini / local
+  model: "gemini-embedding-001"   # Embedding 模型名稱
   dimension: 3072
-  batch_size: 10                 # 每批次向量化文件數量 (防 429 頻率限制)
-  delay_seconds: 5.0             # 批次之間的冷卻間隔時間 (秒)
+  batch_size: 10                  # 每批次向量化文件數量 (防 429 頻率限制)
+  delay_seconds: 5.0              # 批次之間的冷卻間隔時間 (秒)
 
 rag:
-  top_k: 9                       # 檢索前 K 個相關片段
-  chunk_size: 600                # 文件分塊字元數
-  chunk_overlap: 100             # 分塊重疊字元數
+  top_k: 9                        # 檢索前 K 個相關片段
+  chunk_size: 800                 # 文件分塊字元數
+  chunk_mini: 100                 # 短於此長度的文字片段視為雜訊略過
+  chunk_overlap: 130              # 分塊重疊字元數
   collection_name: "ipeecs_knowledge_base"
 
 paths:
@@ -122,15 +126,17 @@ department_info:
 
 ### 三分區爬取與轉換架構
 資料爬蟲將 `config/urls.yaml` 中的目標分為三個分區處理：
-1. **網站分區（Zone 1: 網頁）**：爬取系所網頁內容並轉為 Markdown 儲存至 `res/data/markdown`。可以直接將新連結加入，會自動爬取該網站。
-2. **文字為主分區（Zone 2: 文字 PDF）**：下載中央大學學則等長文規章至 `res/data/raw/text_pdfs`，以 `pymupdf4llm` 高速解析。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
-3. **表格為主分區（Zone 3: 表格 PDF）**：下載 109～115 學年度各專長課規及學程選修辦法 PDF 至 `res/data/raw/table_pdfs`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。若有新連結加入，需要修改網頁爬蟲程式定位 pdf 下載位置。
+1. **網站分區（Zone 1: `web`）**：爬取資電學士班官網、中央大學官網、計算機中心等網頁內容並轉為 Markdown 儲存至 `res/data/markdown`。可以直接將新連結加入，會自動爬取該網站。
+2. **文字為主分區（Zone 2: `text_pdf`）**：下載中央大學學則、資工系會議室教室教學實驗室管理細則（DOCX）等長文規章至 `res/data/raw/text_pdfs`，PDF 以 `pymupdf4llm` 高速解析、DOCX 直接解析段落與表格。若新連結不是直接指向 `.pdf`／`.docx` 檔，需要在 `src/ipeecs_bot/services/crawlers/` 中新增對應的爬蟲方法定位下載位置。
+3. **表格為主分區（Zone 3: `table_pdf`）**：下載各學年度各專長課規、「創意與創業」學分學程選修辦法、最新學年度校曆 PDF 至 `res/data/raw/table_pdfs`，調用 Gemini 多模態精準轉換為結構化 Markdown 表格並快取。若新連結不是直接指向 `.pdf` 檔，同樣需要新增對應的爬蟲方法。
 
 以上三個分區皆由爬蟲自動維護，內容會隨每次執行而被覆蓋更新，屬於**「資料區」（`data` zone）**。
 
 ### 固定資料區（Fixed Zone）
 
 除了爬蟲自動更新的資料外，系統另外提供一個**不受爬蟲影響、需要手動維護**的固定資料區，存放於 `res/data/fixed/markdown`。適合放置人工整理、校對過、且不希望被重新爬取覆蓋的內容（例如手寫 FAQ、經過人工修正的規章摘要）。此區的檔案只需是整理好的 `.md`，同步時系統會直接解析，不會經過爬蟲或 Gemini 表格轉換。
+
+目前固定資料區包含：新生註冊流程、第二學期註冊、居留證延期申請、僑生保險、在學／工作證明、中英版學生宿舍管理辦法。
 
 ```bash
 # 完整同步：爬取系網頁面、下載最新規章 PDF、表格轉換，並將「資料區」與「固定資料區」一併寫入向量庫
@@ -145,8 +151,8 @@ python sync_data.py
 | `--zone {all,data,fixed}` | 指定只處理**資料區**（`data`，爬蟲維護）或**固定資料區**（`fixed`，`res/data/fixed/markdown`），或兩者皆處理（`all`，預設）。選擇 `fixed` 時會自動略過爬蟲步驟，且只清空、重建固定資料區的向量，不影響資料區既有內容；選擇 `data` 則相反。 | 只想更新其中一區內容，不想動到另一區既有的向量資料時。 |
 | `--skip-crawl` | **略過網路爬蟲與表格轉換**，僅重新解析本機 `res/data` 現有文件並快速重建向量索引。 | 已手動加入新 PDF 或修訂 Markdown 時。 |
 | `--skip-llm-convert` | **執行爬蟲與下載，但略過 Gemini 表格轉 Markdown**，直接沿用既有 Markdown 快取。 | 更新網頁或下載新 PDF，但不想重複消耗 LLM Token 重新轉表時。 |
-| `--skip-converted` | **跳過已轉換過的表格 PDF**，若 Markdown 目錄中已存在同名檔案則略過該 PDF 的 Gemini 轉換。 | 爬取或新增 PDF 時，僅針對尚未轉換的檔案呼叫 LLM 轉表，節省 Token 與時間。 |
-| `--no-reset` | **不清空現有資料庫**，直接將新分塊寫入 ChromaDB。 | 單純擴充資料，保留原有向量時。 |
+| `--skip-converted` | **跳過已轉換過的表格 PDF**，若 Markdown 目錄中已存在同名且非空的檔案則略過該 PDF 的 Gemini 轉換。 | 爬取或新增 PDF 時，僅針對尚未轉換的檔案呼叫 LLM 轉表，節省 Token 與時間。 |
+| `--no-reset` | **不清空現有資料庫**，直接將新分塊寫入 ChromaDB。分塊 ID 以 `zone_序號` 編號，與既有 ID 重複的分塊不會覆蓋原資料。 | 資料庫為空、或確定新分塊不與既有資料重疊時；一般更新請勿使用。 |
 
 範例：
 ```bash
@@ -186,7 +192,7 @@ python main.py
 [INFO] Bot is ready to accept 1-on-1 DM inquiries.
 ```
 
-> **提示**：按下 `Ctrl + C` 可觸發 Graceful Shutdown，安全關閉連線與保存狀態。機器人上線時會自動將狀態設為「正在收聽 私訊諮詢系所規章與選課」。
+> **提示**：若向量資料庫為空，啟動時會顯示警告，提醒先執行 `python sync_data.py`。按下 `Ctrl + C` 可觸發 Graceful Shutdown，安全關閉連線。機器人上線時會自動將狀態設為「正在收聽 私訊諮詢系所規章與選課」。
 
 ---
 
@@ -209,8 +215,8 @@ python main.py
 > - 資料結構（3學分）
 > - 演算法（3學分）
 > - 物件導向程式設計（3學分）  
-    > ...  
-    > 📌 參考來源：`113學年度_資訊工程專長.pdf`
+> ...  
+> 📌 參考來源：`113學年度_資訊工程專長.md`
 
 #### 情境 2：籠統問題（機器人主動追問）
 > **使用者**：畢業門檻是多少學分？  
@@ -223,10 +229,14 @@ python main.py
 > **使用者**：那如果是電機專長呢？  
 > **機器人**：（自動結合前述上下文，辨識出是在詢問 113 學年度電機專長畢業學分與專長修課條件並給出精確解答）
 
-#### 情境 4：超出範圍／無資料（安全附帶系辦資訊）
-> **使用者**：請問資電學士班學生的宿舍保證住幾年？  
+#### 情境 4：以其他語言提問
+> **使用者**：How do I extend my ARC (Alien Resident Certificate)?  
+> **機器人**：（以繁體中文檢索居留證延期相關資料後，以英文回答並附上參考來源）
+
+#### 情境 5：超出範圍／無資料（安全附帶系辦資訊）
+> **使用者**：幫我寫一個 Python 的排序程式。  
 > **機器人**：  
-> 我目前在規章資料庫中查無足夠的相關資訊（問題超出規章範圍或查無記錄）。
+> 我目前在規章資料庫中查無足夠的相關資訊（問題超出規章範圍或查無記載）。
 >
 > 若我有無法回答的問題，或是需要進一步協助，也歡迎透過以下方式聯繫系辦公室：  
 > 🏢 **資訊電機學院學士班辦公室**  
@@ -239,19 +249,33 @@ python main.py
 
 ### 特殊指令
 
-- **`/reset`** 或 輸入 **`重新開始` / `重設` / `reset`**：
-  清除當前使用者在機器人中的短期對話記憶，重新開啟新話題。
+- 在私訊中輸入 **`/reset`**、**`reset`**、**`重新開始`** 或 **`重設`**（整則訊息僅含該文字）：
+  清除當前使用者在機器人中的短期對話記憶，重新開啟新話題。對話閒置超過 60 分鐘也會自動重置。
 
 ---
 
 ## 7. 系統維護與客製化
+
+### 調整目標爬蟲網址 (`config/urls.yaml`)
+依三大分區以 `["標題", "網址"]` 格式加入目標，標題會作為輸出的檔名：
+```yaml
+web:
+  - ["學士班簡介", "https://www.ipeecs.ncu.edu.tw/basic-info/intro/intro/"]
+
+text_pdf:
+  - ["國立中央大學學則", "https://pdc.adm.ncu.edu.tw/p/412-1019-1993.php?Lang=zh-tw"]
+
+table_pdf:
+  - ["必修及專業科目畢業條件", "https://pdc.adm.ncu.edu.tw/p/412-1019-2070.php?Lang=zh-tw"]
+  - ["最新年度校曆", "https://pdc.adm.ncu.edu.tw/p/412-1019-1725.php?Lang=zh-tw"]
+```
 
 ### 增加手動 Markdown 文件
 若有尚未製作成網頁或 PDF 的常見問答（FAQ），或是需要人工校對、不希望被下次爬蟲覆蓋的內容，請新增 Markdown 檔案至**固定資料區** `res/data/fixed/markdown`（例如 `自訂常見問題集.md`），接著執行：
 ```bash
 python sync_data.py --zone fixed
 ```
-即可立即將自訂 QA 整合至機器人的知識庫中，且不會被爬蟲自動更新的內容覆蓋，也不會動到 `data` 區既有的向量。
+即可立即將自訂 QA 整合至機器人的知識庫中，且不會被爬蟲自動更新的內容覆蓋，也不會動到 `data` 區既有的向量。檔名會作為參考來源名稱與分塊標題，建議取有意義的名稱。
 
 > 注意：`res/data/markdown` 是爬蟲的輸出目錄，每次執行 `sync_data.py`（未加 `--skip-crawl`）都可能被覆蓋或新增檔案，不適合放置需要長期保留的手動內容。
 
