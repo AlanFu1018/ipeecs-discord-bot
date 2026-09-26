@@ -1,7 +1,5 @@
 """Main entry point for starting the IPEECS Department Advisor Discord Bot."""
 import asyncio
-import os
-import signal
 import sys
 from pathlib import Path
 

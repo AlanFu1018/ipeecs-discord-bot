@@ -99,7 +99,8 @@ class ChatService:
             "1. 判斷【使用者最新輸入】使用的自然語言，輸出該語言的常用名稱（例如：繁體中文、English、日本語、한국어）。\n"
             "2. 結合對話歷史（代入其中提問者的身分訊息，如入學年度、專長領域、年級），"
             "將【使用者最新輸入】統一改寫為一個獨立、語意完整的「繁體中文」搜尋問句"
-            "（此問句僅用於資料庫檢索，與使用者輸入的語言無關，一律輸出繁體中文）。\n"
+            "（此問句僅用於資料庫檢索，與使用者輸入的語言無關，一律輸出繁體中文）。"
+            "輸入或對話歷史中出現的課號（如 CE2003、EE1010）必須原樣保留在問句中，不可翻譯、省略或改寫成課名。\n"
             "3. 結合對話歷史，判斷【使用者最新輸入】是否屬於資電學士班客服業務範圍：\n"
             "   - IN：修課、學分、必修/選修、畢業門檻、學程、轉系/雙主修、規章與系所行政事項等。\n"
             "   - OUT：撰寫程式碼、作業或考題解答、翻譯、一般知識問答、閒聊等。"
@@ -193,7 +194,15 @@ class ChatService:
             logger.info(f"Out-of-scope request refused for user {user_id}: '{clean_input}'")
             return self.get_fallback_message(is_error=False)
 
-        # Step 2: Vector Retrieval
+        # Course codes drive the keyword half of retrieval, so never let the rewrite drop one.
+        missing_codes = [
+            code for code in VectorStore.extract_course_codes(clean_input)
+            if code not in VectorStore.extract_course_codes(standalone_query)
+        ]
+        if missing_codes:
+            standalone_query = f"{standalone_query} {' '.join(missing_codes)}"
+
+        # Step 2: Hybrid Retrieval (course-code keyword + vector similarity)
         docs = await self.vector_store.search(
             query=standalone_query,
             top_k=self.settings.top_k,
