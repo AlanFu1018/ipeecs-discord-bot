@@ -36,7 +36,7 @@ class ChatService:
         name = self.dept_info.get("name", "資訊電機學院學士班辦公室")
         phone = self.dept_info.get("phone", "03-4227151 分機 35007")
         email = self.dept_info.get("email", "ncu35007@ncu.edu.tw")
-        location = self.dept_info.get("location", "工程五館E6 B棟106室 (E6-B106)")
+        location = self.dept_info.get("location", "工程二館E1 資策會2F")
         office_hours = self.dept_info.get("office_hours", "週一至週五 08:30 - 17:00")
 
         contact_text = (
@@ -143,7 +143,7 @@ class ChatService:
         dept_name = self.dept_info.get("name", "資訊電機學院學士班辦公室")
         phone = self.dept_info.get("phone", "03-4227151 分機 35007")
         email = self.dept_info.get("email", "ncu35007@ncu.edu.tw")
-        location = self.dept_info.get("location", "工程五館E6 B棟106室 (E6-B106)")
+        location = self.dept_info.get("location", "工程二館E1 資策會2F")
         office_hours = self.dept_info.get("office_hours", "週一至週五 08:30 - 17:00")
 
         return (
