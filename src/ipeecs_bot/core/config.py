@@ -27,6 +27,8 @@ class Settings:
             or ""
         )
         self.gemini_api_key = os.getenv("GEMINI_API_KEY") or ""
+        self.groq_api_key = os.getenv("GROQ_API_KEY") or ""
+        self.nvidia_api_key = os.getenv("NVIDIA_API_KEY") or ""
 
         # Bot configs
         bot_cfg = self._raw_config.get("bot", {})
@@ -40,6 +42,8 @@ class Settings:
         self.llm_model = llm_cfg.get("model", "gemini-3.1-flash-lite")
         self.llm_temperature = float(llm_cfg.get("temperature", 0.2))
         self.llm_max_output_tokens = int(llm_cfg.get("max_output_tokens", 1500))
+        # Optional override for OpenAI-compatible providers (e.g. a self-hosted NVIDIA NIM)
+        self.llm_base_url = llm_cfg.get("base_url") or None
 
         # Embedding configs
         embed_cfg = self._raw_config.get("embedding", {})

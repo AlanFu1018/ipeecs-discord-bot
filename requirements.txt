@@ -1,5 +1,6 @@
 discord-py
 google-genai
+openai
 chromadb
 pymupdf4llm
 beautifulsoup4
