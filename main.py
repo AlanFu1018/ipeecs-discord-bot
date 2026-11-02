@@ -23,9 +23,24 @@ async def main():
         logger.error("DISCORD_BOT_TOKEN is not configured in .env file! Exiting...")
         sys.exit(1)
 
-    if not settings.gemini_api_key:
-        logger.error("GEMINI_API_KEY is not configured in .env file! Exiting...")
-        sys.exit(1)
+    # Only require the API keys of the providers actually in use
+    required_keys = {}
+    llm_name = settings.llm_provider.lower()
+    if llm_name == "gemini":
+        required_keys["GEMINI_API_KEY"] = settings.gemini_api_key
+    elif llm_name == "groq":
+        required_keys["GROQ_API_KEY"] = settings.groq_api_key
+    elif llm_name in ("nvidia", "nim"):
+        required_keys["NVIDIA_API_KEY"] = settings.nvidia_api_key
+    elif llm_name == "openai":
+        required_keys["OPENAI_API_KEY"] = settings.openai_api_key
+    if settings.embed_provider.lower() == "gemini":
+        required_keys["GEMINI_API_KEY"] = settings.gemini_api_key
+
+    for key_name, value in required_keys.items():
+        if not value:
+            logger.error(f"{key_name} is not configured in .env file! Exiting...")
+            sys.exit(1)
 
     logger.info("Initializing IPEECS Discord Bot services...")
 

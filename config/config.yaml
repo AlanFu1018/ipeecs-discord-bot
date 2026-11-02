@@ -4,9 +4,9 @@ bot:
   max_history_turns: 5
 
 llm:
-  provider: "gemini" # gemini, groq, nvidia
-  model: "gemini-3.1-flash-lite" # e.g. groq: "llama-3.3-70b-versatile", nvidia: "meta/llama-3.3-70b-instruct"
-  # base_url: "http://localhost:8000/v1" # optional, only for a self-hosted NVIDIA NIM
+  provider: "gemini" # gemini, groq, nvidia, openai
+  model: "gemini-3.1-flash-lite" # e.g. groq: "llama-3.3-70b-versatile", nvidia: "meta/llama-3.3-70b-instruct", openai: "gpt-4o-mini"
+  # base_url: "http://localhost:8000/v1" # optional, only for a self-hosted NVIDIA NIM or an OpenAI-compatible proxy
   temperature: 0.2
   max_output_tokens: 1500
 

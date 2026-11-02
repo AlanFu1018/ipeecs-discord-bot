@@ -29,6 +29,7 @@ class Settings:
         self.gemini_api_key = os.getenv("GEMINI_API_KEY") or ""
         self.groq_api_key = os.getenv("GROQ_API_KEY") or ""
         self.nvidia_api_key = os.getenv("NVIDIA_API_KEY") or ""
+        self.openai_api_key = os.getenv("OPENAI_API_KEY") or ""
 
         # Bot configs
         bot_cfg = self._raw_config.get("bot", {})
